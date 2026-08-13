@@ -37,5 +37,6 @@ for alias, dtype in (
 
 ROOT = Path(__file__).resolve().parent.parent
 os.chdir(ROOT)
+sys.path.insert(0, str(ROOT))  # this file lives one level down, so the repo's own packages need adding
 sys.argv = ["run_ucad.py"] + sys.argv[1:]
 runpy.run_path(str(ROOT / "run_ucad.py"), run_name="__main__")
