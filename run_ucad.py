@@ -309,7 +309,8 @@ def run(
                     pr_auroc = auroc
                     img_ap = average_precision_score(anomaly_labels,scores)
                     # Compute PRO score & PW Auroc for all images
-                    segmentations = ap_seg.reshape(-1,224,224)
+                    _side = dataloaders["testing"].dataset.imagesize[-1]
+                    segmentations = ap_seg.reshape(-1,_side,_side)
                     # (Optional) Plot example images.
                     if save_segmentation_images:
                         image_paths = [
@@ -392,7 +393,8 @@ def run(
                     basic_pr_auroc = basic_auroc
                     basic_img_ap = average_precision_score(basic_anomaly_labels,basic_scores)
                     # Compute PRO score & PW Auroc for all images
-                    basic_segmentations = basic_ap_seg.reshape(-1,224,224)
+                    _side = dataloaders["testing"].dataset.imagesize[-1]
+                    basic_segmentations = basic_ap_seg.reshape(-1,_side,_side)
                     # (Optional) Plot example images.
                     
                     basic_pixel_scores = patchcore.metrics.compute_pixelwise_retrieval_metrics(
