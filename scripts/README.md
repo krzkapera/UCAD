@@ -45,3 +45,30 @@ this flag against one from a run without it. To measure only the untrained model
 
 `UCAD_MVTEC_MASKS` and `UCAD_VISA_MASKS` point the SAM masks at a different directory than the
 `mvtec2d-sam-b` and `visa-sam-b` the code otherwise assumes.
+
+## Varying the backbone, the grid and the loss input
+
+Four more variables exist so that the choices baked into `patchcore/` can be varied without editing
+it. All four default to what the released code does.
+
+`UCAD_VIT_WEIGHTS` selects which pretrained checkpoint is loaded, as a Hugging Face tag. This one
+deserves attention: `default_cfgs` in `patchcore/vision_transformer.py` has the entry for
+`vit_base_patch16_224` edited away from timm's augreg checkpoint - that line is still there,
+commented out - and pointed at `imagenet21k/ViT-B_16.npz`, which is the original ImageNet-21k
+release with no ImageNet-1k fine-tuning. The default here is that checkpoint, `orig_in21k`. The
+docstring above the model function still describes the augreg one.
+
+`UCAD_VIT` names the timm ViT to build. The patch size sets the feature grid: `vit_base_patch32_224`
+gives 7x7, the default `vit_base_patch16_224` gives 14x14, `vit_base_patch8_224` gives 28x28, and
+`vit_base_patch16_384` gives 24x24 with the patch size unchanged, which separates a finer grid from
+simply having more tokens. Pass `--resize 384 --imagesize 384` for the 384 variants.
+
+`UCAD_FEATURE_BLOCK` is the transformer block the patch features are read after, 5 by default.
+
+`UCAD_PROMPT_LEN` is the number of prefix tokens per layer, 1 by default. The paper reports a prompt
+of shape (15, 7, 768) and `args_dict.npy` carries `length=5`; neither reaches the model.
+
+`UCAD_SAM_INTERP=nearest` samples the SAM label map when resizing it to the feature grid instead of
+averaging it. The map holds segment ids and the loss compares them for equality, so bilinear - which
+is `cv2.resize`'s default and therefore what runs otherwise - leaves cells on segment boundaries
+with averaged values that equal no id at all.

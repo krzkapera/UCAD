@@ -119,6 +119,10 @@ def perlin_noise_tensor(image,probability):
             target[i] = torch.from_numpy(-1*feat_label)
     return image,target
 
+# Which transformer block the patch features are read after; the released code reads the sixth.
+FEATURE_BLOCK = int(os.environ.get('UCAD_FEATURE_BLOCK', '5'))
+
+
 def _cfg(url='', **kwargs):
     return {
         'url': url,
@@ -664,7 +668,7 @@ class VisionTransformer(nn.Module):
                             # print(torch.sum(prompt))
                             x = torch.cat([prompt, x], dim=1)
                             x = block(x)
-                        if(i==5):
+                        if(i==FEATURE_BLOCK):
                             res['seg_feat'] = [x[:,1:,:]]
                     else:
                         x = block(x)
@@ -672,7 +676,7 @@ class VisionTransformer(nn.Module):
                 res = dict()
                 for i, block in enumerate(self.blocks):
                     x = block(x)
-                    if(i==5):
+                    if(i==FEATURE_BLOCK):
                             res['seg_feat'] = [x[:,1:,:]]
                 
 
@@ -704,14 +708,20 @@ class VisionTransformer(nn.Module):
         if(self.use_e_prompt and train):
 
             # res['loss'] = torch.tensor(0).float().cuda()
-            labels = torch.zeros((x.shape[0],14*14)).cuda()
+            grid_h, grid_w = self.patch_embed.grid_size
+            labels = torch.zeros((x.shape[0],grid_h*grid_w)).cuda()
+            # cv2.resize defaults to bilinear, which averages the SAM segment ids this map holds and
+            # leaves boundary cells with values matching nothing under the loss's equality test.
+            # UCAD_SAM_INTERP=nearest samples them instead; the default is what was released.
+            interpolation = cv2.INTER_NEAREST if os.environ.get('UCAD_SAM_INTERP') == 'nearest' else cv2.INTER_LINEAR
 
             for i in range(x.shape[0]):
                 if('mvtec2d' in image_path[i]):
                     sam_score = cv2.imread(image_path[i].replace('mvtec2d', os.environ.get('UCAD_MVTEC_MASKS', 'mvtec2d-sam-b')))
                 elif('visa' in image_path[i]):
                     sam_score = cv2.imread(image_path[i].replace('visa', os.environ.get('UCAD_VISA_MASKS', 'visa-sam-b')))
-                labels[i] = torch.from_numpy(cv2.resize(sam_score,(14,14))[:,:,0].flatten()).cuda()
+                labels[i] = torch.from_numpy(
+                    cv2.resize(sam_score,(grid_w,grid_h),interpolation=interpolation)[:,:,0].flatten()).cuda()
             res['loss'] = torch.tensor(0).float().cuda()
             # loss for sam
             for k in range(len(res['seg_feat'])):
@@ -930,9 +940,10 @@ def _create_vision_transformer(variant, pretrained=False, **kwargs):
     # print(pretrained_cfg)
     # print(type(pretrained_cfg))<class 'timm.models._pretrained.PretrainedCfg'>
     # timm now returns a PretrainedCfg object rather than a dict, so pretrained_cfg['url'] raises
-    # TypeError, and its loader no longer serves the .npz this code expected. The model is therefore
-    # built empty and the ImageNet weights are read from the local Hugging Face cache instead, which
-    # is the same checkpoint timm would have fetched: vit_base_patch16_224.augreg2_in21k_ft_in1k.
+    # TypeError and its loader no longer serves the .npz files default_cfgs above points at. The
+    # model is built empty and the weights are fetched from the Hugging Face mirror of the same
+    # checkpoints instead; DEFAULT_WEIGHT_TAGS records which checkpoint each entry of default_cfgs
+    # names, so the default reproduces what this repository asks for.
     model = build_model_with_cfg(
         VisionTransformer, variant, False,
         pretrained_cfg=pretrained_cfg,
@@ -940,25 +951,31 @@ def _create_vision_transformer(variant, pretrained=False, **kwargs):
         **kwargs)
 
     if pretrained:
-        import glob
-
-        from safetensors.torch import load_file as load_safetensors
-
-        cache = os.environ.get('HF_HOME', os.path.expanduser('~/.cache/huggingface'))
-        pattern = f'{cache}/hub/models--timm--vit_base_patch16_224.augreg2_in21k_ft_in1k/snapshots/*/model.safetensors'
-        found = glob.glob(pattern)
-        if not found:
-            raise FileNotFoundError(
-                f'No pretrained ViT weights under {pattern}. Fetch them once with '
-                f'timm.create_model("vit_base_patch16_224", pretrained=True) on a machine with network access.'
-            )
-
-        weights = {k: v for k, v in load_safetensors(found[0]).items() if not k.startswith('head.')}
+        weights = load_hub_weights(variant, os.environ.get('UCAD_VIT_WEIGHTS') or DEFAULT_WEIGHT_TAGS[variant])
         loaded = model.load_state_dict(weights, strict=False)
         print('pretrained weights loaded, missing:', len(loaded.missing_keys),
               'unexpected:', len(loaded.unexpected_keys))
 
     return model
+
+
+# What default_cfgs above actually points at, as Hugging Face tags. vit_base_patch16_224 is the one
+# that matters: its entry was edited away from timm's augreg checkpoint to imagenet21k/ViT-B_16.npz,
+# which is the original ImageNet-21k release with no ImageNet-1k fine-tuning.
+DEFAULT_WEIGHT_TAGS = {
+    'vit_base_patch16_224': 'orig_in21k',
+    'vit_base_patch16_384': 'augreg_in21k_ft_in1k',
+    'vit_base_patch8_224': 'augreg_in21k_ft_in1k',
+    'vit_base_patch32_224': 'augreg_in21k_ft_in1k',
+}
+
+
+def load_hub_weights(variant, tag):
+    from huggingface_hub import hf_hub_download
+    from safetensors.torch import load_file as load_safetensors
+
+    path = hf_hub_download(f'timm/{variant}.{tag}', 'model.safetensors')
+    return {k: v for k, v in load_safetensors(path).items() if not k.startswith('head.')}
 
 
 @register_model

@@ -88,8 +88,12 @@ class PatchCore(torch.nn.Module):
 
         
 
+        # The backbone the released code builds is fixed; UCAD_VIT names another timm ViT so the
+        # feature grid can be varied (patch32 gives 7x7, patch16 14x14, patch8 28x28, and the _384
+        # variants keep the patch size while adding tokens).
+        vit_name = os.environ.get("UCAD_VIT", "vit_base_patch16_224")
         self.model = create_model(
-            "vit_base_patch16_224",
+            vit_name,
             pretrained=True,
             num_classes=15,
             drop_rate=0.0,
@@ -97,13 +101,13 @@ class PatchCore(torch.nn.Module):
             drop_block_rate=None,
         )
         self.prompt_model = create_model(
-            "vit_base_patch16_224",
+            vit_name,
             pretrained=True,
             num_classes=15,
             drop_rate=0.0,
             drop_path_rate=0.0,
             drop_block_rate=None,
-            prompt_length=1,
+            prompt_length=int(os.environ.get("UCAD_PROMPT_LEN", "1")),
             embedding_key="cls",
             prompt_init="uniform",
             prompt_pool=True,
@@ -164,7 +168,8 @@ class PatchCore(torch.nn.Module):
             # features = self.forward_modules["feature_aggregator"](images)
             features = self.model(images)['seg_feat']
             for i in range(len(features)):
-                features[i] = features[i].reshape(-1,14,14,768).permute(0,3,1,2)
+                grid_h, grid_w = self.prompt_model.patch_embed.grid_size
+                features[i] = features[i].reshape(-1, grid_h, grid_w, self.prompt_model.embed_dim).permute(0,3,1,2)
     
         features = [
             self.patch_maker.patchify(x, return_spatial_info=True) for x in features
@@ -234,7 +239,8 @@ class PatchCore(torch.nn.Module):
             # features = self.forward_modules["feature_aggregator"](images)
             features = self.prompt_model(images)['seg_feat']
             for i in range(len(features)):
-                features[i] = features[i].reshape(-1,14,14,768).permute(0,3,1,2)
+                grid_h, grid_w = self.prompt_model.patch_embed.grid_size
+                features[i] = features[i].reshape(-1, grid_h, grid_w, self.prompt_model.embed_dim).permute(0,3,1,2)
     
         features = [
             self.patch_maker.patchify(x, return_spatial_info=True) for x in features
