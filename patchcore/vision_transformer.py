@@ -929,14 +929,35 @@ def _create_vision_transformer(variant, pretrained=False, **kwargs):
     pretrained_cfg = resolve_pretrained_cfg(variant, pretrained_cfg=kwargs.pop('pretrained_cfg', None))
     # print(pretrained_cfg)
     # print(type(pretrained_cfg))<class 'timm.models._pretrained.PretrainedCfg'>
-    print(pretrained_cfg['url'])
+    # timm now returns a PretrainedCfg object rather than a dict, so pretrained_cfg['url'] raises
+    # TypeError, and its loader no longer serves the .npz this code expected. The model is therefore
+    # built empty and the ImageNet weights are read from the local Hugging Face cache instead, which
+    # is the same checkpoint timm would have fetched: vit_base_patch16_224.augreg2_in21k_ft_in1k.
     model = build_model_with_cfg(
-        VisionTransformer, variant, pretrained,
+        VisionTransformer, variant, False,
         pretrained_cfg=pretrained_cfg,
         pretrained_filter_fn=checkpoint_filter_fn,
-        pretrained_custom_load='npz' in pretrained_cfg['url'],
-        # pretrained_custom_load=True,#'npz' in pretrained_cfg['url'],
         **kwargs)
+
+    if pretrained:
+        import glob
+
+        from safetensors.torch import load_file as load_safetensors
+
+        cache = os.environ.get('HF_HOME', os.path.expanduser('~/.cache/huggingface'))
+        pattern = f'{cache}/hub/models--timm--vit_base_patch16_224.augreg2_in21k_ft_in1k/snapshots/*/model.safetensors'
+        found = glob.glob(pattern)
+        if not found:
+            raise FileNotFoundError(
+                f'No pretrained ViT weights under {pattern}. Fetch them once with '
+                f'timm.create_model("vit_base_patch16_224", pretrained=True) on a machine with network access.'
+            )
+
+        weights = {k: v for k, v in load_safetensors(found[0]).items() if not k.startswith('head.')}
+        loaded = model.load_state_dict(weights, strict=False)
+        print('pretrained weights loaded, missing:', len(loaded.missing_keys),
+              'unexpected:', len(loaded.unexpected_keys))
+
     return model
 
 
