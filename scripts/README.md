@@ -37,7 +37,11 @@ epoch whose average scores best on the test set, so a single epoch's own reading
 from the normal output.
 
 `UCAD_EVAL_UNTRAINED` runs one evaluation before the first epoch, which measures the model with its
-prefix untrained.
+prefix untrained. That evaluation builds a memory bank, and the coreset's random projection draws
+from the global RNG, so the epochs that follow it see a different random stream than they would
+have. The untrained reading itself is unaffected, but do not compare a trained epoch from a run with
+this flag against one from a run without it. To measure only the untrained model, pass
+`--epochs_num 0`: the loop then runs the evaluation and nothing else.
 
 `UCAD_MVTEC_MASKS` and `UCAD_VISA_MASKS` point the SAM masks at a different directory than the
 `mvtec2d-sam-b` and `visa-sam-b` the code otherwise assumes.
