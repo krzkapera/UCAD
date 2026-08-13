@@ -88,7 +88,32 @@ def run(
     memory_feature_list = [0]*15
     prompt_list = [0]*15
     print(prompt_list)
+
+    # Opt-in instrumentation. With none of these set the run behaves exactly as before.
+    #   UCAD_CKPT_DIR        save each finished concept there and resume from it
+    #   UCAD_LOG_EPOCHS      print image AUROC and pixel AP after every epoch
+    #   UCAD_EVAL_UNTRAINED  evaluate once before the first epoch, so the untrained model is measured
+    _ckpt_dir = os.environ.get("UCAD_CKPT_DIR")
+    _log_epochs = bool(os.environ.get("UCAD_LOG_EPOCHS"))
+    _eval_untrained = bool(os.environ.get("UCAD_EVAL_UNTRAINED"))
+    _pending_prompt_state = None
+    if _ckpt_dir:
+        os.makedirs(_ckpt_dir, exist_ok=True)
+
+    def _ckpt_path(idx):
+        return os.path.join(_ckpt_dir, "task_%02d.pt" % idx)
+
     for dataloader_count, dataloaders in enumerate(list_of_dataloaders):
+        if _ckpt_dir and os.path.exists(_ckpt_path(dataloader_count)):
+            _saved = torch.load(_ckpt_path(dataloader_count), map_location="cpu", weights_only=False)
+            key_feature_list[dataloader_count] = _saved["key_feature"]
+            memory_feature_list[dataloader_count] = _saved["memory_feature"]
+            _prompt = _saved["prompt"]
+            prompt_list[dataloader_count] = _prompt.cuda() if hasattr(_prompt, "cuda") else _prompt
+            result_collect.append(_saved["result"])
+            _pending_prompt_state = _saved["prompt_model"]
+            LOGGER.info("resuming: concept %d restored from checkpoint, training skipped" % dataloader_count)
+            continue
         LOGGER.info(
             "Evaluating dataset [{}] ({}/{})...".format(
                 dataloaders["training"].name,
@@ -107,6 +132,10 @@ def run(
                 device,
             )
             PatchCore_list = methods["get_patchcore"](imagesize, sampler, device)
+            if _pending_prompt_state is not None:
+                for _core in PatchCore_list:
+                    _core.prompt_model.load_state_dict(_pending_prompt_state)
+                _pending_prompt_state = None
             if len(PatchCore_list) > 1:
                 LOGGER.info(
                     "Utilizing PatchCore Ensemble (N={}).".format(len(PatchCore_list))
@@ -146,13 +175,14 @@ def run(
                 lr_scheduler = None
             best_auroc,best_full_pixel_auroc,best_img_ap,best_pixel_ap,best_pixel_pro,best_time_cost = 0,0,0,0,0,0
             best_basic_auroc,best_basic_full_pixel_auroc,best_basic_img_ap,best_basic_pixel_ap,best_basic_pixel_pro,best_basic_time_cost = 0,0,0,0,0,0
-            for epoch in range(epochs):
+            for epoch in range(-1 if _eval_untrained else 0, epochs):
                 for i, PatchCore in enumerate(PatchCore_list):
                     torch.cuda.empty_cache()
                     # '''
                     PatchCore.prompt_model.train()
-                    loss_list = []
-                    with tqdm.tqdm(dataloaders["training"], desc="training...", leave=False) as data_iterator:
+                    loss_list = [0.0]
+                    _epoch_data = dataloaders["training"] if epoch >= 0 else []
+                    with tqdm.tqdm(_epoch_data, desc="training...", leave=False) as data_iterator:
                         for image in data_iterator:
                             # if(image["image"].shape[0]<2):
                             #     continue
@@ -169,7 +199,7 @@ def run(
                             torch.nn.utils.clip_grad_norm_(PatchCore.prompt_model.parameters(), args.clip_grad)
                             optimizer.step()
                         print("epoch:{} loss:{}".format(epoch,np.mean(loss_list)))    
-                    if lr_scheduler:
+                    if lr_scheduler and epoch >= 0:
                         lr_scheduler.step(i)
 
                     PatchCore.prompt_model.eval()
@@ -188,6 +218,18 @@ def run(
                         dataloaders["testing"]
                     )
                     aggregator["scores"].append(scores)
+                    if _log_epochs:
+                        _labels = [x[1] != "good" for x in dataloaders["testing"].dataset.data_to_iterate]
+                        _auroc = patchcore.metrics.compute_imagewise_retrieval_metrics(scores, _labels)["auroc"]
+                        _pixel_ap = average_precision_score(
+                            np.asarray(masks_gt).flatten().astype(np.int32), np.asarray(segmentations).flatten()
+                        )
+                        print(
+                            "SINGLE_EPOCH category:{} name:{} epoch:{} auroc:{} pixel_ap:{}".format(
+                                dataloader_count, dataloaders["training"].name, epoch, _auroc, _pixel_ap
+                            ),
+                            flush=True,
+                        )
                     aggregator["segmentations"].append(segmentations)
                     end_time = time.time()
                 
@@ -406,6 +448,19 @@ def run(
                     )
                     PatchCore.save_to_path(patchcore_save_path, prepend)
 
+        if _ckpt_dir:
+            torch.save(
+                {
+                    "key_feature": key_feature_list[dataloader_count],
+                    "memory_feature": memory_feature_list[dataloader_count],
+                    "prompt": prompt_list[dataloader_count],
+                    "prompt_model": PatchCore_list[0].prompt_model.state_dict(),
+                    "result": result_collect[-1],
+                },
+                _ckpt_path(dataloader_count),
+            )
+            LOGGER.info("checkpoint: concept %d saved" % dataloader_count)
+
         LOGGER.info("\n\n-----\n")
     # Inference
     '''
@@ -520,16 +575,17 @@ def run(
         row_names=result_dataset_names,
     )
 
-    print('Average result without limited memory')
-    basic_result_metric_names = list(result_collect_nolimit[-1].keys())[1:]
-    basic_result_dataset_names = [results["dataset_name"] for results in result_collect_nolimit]
-    basic_result_scores = [list(results.values())[1:] for results in result_collect_nolimit]
-    patchcore.utils.compute_and_store_final_results(
-        run_save_path_nolimit,
-        basic_result_scores,
-        column_names=basic_result_metric_names,
-        row_names=basic_result_dataset_names,
-    )
+    if result_collect_nolimit:
+        print('Average result without limited memory')
+        basic_result_metric_names = list(result_collect_nolimit[-1].keys())[1:]
+        basic_result_dataset_names = [results["dataset_name"] for results in result_collect_nolimit]
+        basic_result_scores = [list(results.values())[1:] for results in result_collect_nolimit]
+        patchcore.utils.compute_and_store_final_results(
+            run_save_path_nolimit,
+            basic_result_scores,
+            column_names=basic_result_metric_names,
+            row_names=basic_result_dataset_names,
+        )
 
 
 @main.command("ucad")

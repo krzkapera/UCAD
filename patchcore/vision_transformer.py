@@ -1,3 +1,4 @@
+import os
 """ Vision Transformer (ViT) in PyTorch
 
 A PyTorch implement of Vision Transformers as described in:
@@ -707,9 +708,9 @@ class VisionTransformer(nn.Module):
 
             for i in range(x.shape[0]):
                 if('mvtec2d' in image_path[i]):
-                    sam_score = cv2.imread(image_path[i].replace('mvtec2d','mvtec2d-sam-b'))
+                    sam_score = cv2.imread(image_path[i].replace('mvtec2d', os.environ.get('UCAD_MVTEC_MASKS', 'mvtec2d-sam-b')))
                 elif('visa' in image_path[i]):
-                    sam_score = cv2.imread(image_path[i].replace('visa','visa-sam-b'))
+                    sam_score = cv2.imread(image_path[i].replace('visa', os.environ.get('UCAD_VISA_MASKS', 'visa-sam-b')))
                 labels[i] = torch.from_numpy(cv2.resize(sam_score,(14,14))[:,:,0].flatten()).cuda()
             res['loss'] = torch.tensor(0).float().cuda()
             # loss for sam
