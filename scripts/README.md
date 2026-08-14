@@ -8,6 +8,7 @@ Everything needed to run this repository's experiments, kept out of the model co
 | `launch.py` | entry point; restores the NumPy 1.x aliases the code still uses and caps the process's address space, then runs `run_ucad.py` |
 | `run_benchmark.sbatch` | one benchmark per submission, configured through the environment |
 | `visa_sam_b_masks.py` | rewrites VisA SAM label maps into the 8-bit, image-named form `run_ucad.py` reads |
+| `FINDINGS.md` | what the measurements say: which checkpoint reproduces the paper, what the loss is worth, and which unvaried settings are worth more |
 
 ## Running a benchmark
 
