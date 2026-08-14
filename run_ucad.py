@@ -24,6 +24,26 @@ from timm.optim import create_optimizer
 
 import argparse
 
+
+def _mask_cosines(res):
+    """Mean cosine of patch pairs inside one SAM segment and across two, for one batch.
+
+    The loss pulls the first towards 1 and pushes the second towards -1. Nearest-neighbour scoring
+    needs the first to stay below 1, because a defect sits inside a segment: once every patch of a
+    segment maps to the same point, there is nothing left for the bank to be far from.
+    """
+    import torch
+    import torch.nn.functional as F
+
+    features = F.normalize(res["seg_feat"][0].detach(), dim=2)
+    similarity = torch.bmm(features, features.transpose(1, 2))
+    same = (res["labels"].unsqueeze(1) == res["labels"].unsqueeze(2)).float()
+    off_diagonal = 1 - torch.eye(features.shape[1], device=features.device).unsqueeze(0)
+
+    within = (similarity * same * off_diagonal).sum() / (same * off_diagonal).sum().clamp(min=1)
+    between = (similarity * (1 - same)).sum() / (1 - same).sum().clamp(min=1)
+    return float(within), float(between)
+
 LOGGER = logging.getLogger(__name__)
 
 _DATASETS = {"mvtec": ["patchcore.datasets.mvtec", "MVTecDataset"]}
@@ -46,26 +66,6 @@ def main(**kwargs):
 
 
 @main.result_callback()
-def _mask_cosines(res):
-    """Mean cosine of patch pairs inside one SAM segment and across two, for one batch.
-
-    The loss pulls the first towards 1 and pushes the second towards -1. Nearest-neighbour scoring
-    needs the first to stay below 1, because a defect sits inside a segment: once every patch of a
-    segment maps to the same point, there is nothing left for the bank to be far from.
-    """
-    import torch
-    import torch.nn.functional as F
-
-    features = F.normalize(res["seg_feat"][0].detach(), dim=2)
-    similarity = torch.bmm(features, features.transpose(1, 2))
-    same = (res["labels"].unsqueeze(1) == res["labels"].unsqueeze(2)).float()
-    off_diagonal = 1 - torch.eye(features.shape[1], device=features.device).unsqueeze(0)
-
-    within = (similarity * same * off_diagonal).sum() / (same * off_diagonal).sum().clamp(min=1)
-    between = (similarity * (1 - same)).sum() / (1 - same).sum().clamp(min=1)
-    return float(within), float(between)
-
-
 def run(
     methods,
     results_path,
