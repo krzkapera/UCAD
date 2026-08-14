@@ -622,6 +622,17 @@ class VisionTransformer(nn.Module):
         mask = (labels.unsqueeze(1) == labels.unsqueeze(2)).float()
 
         # 4. get loss
+        # The paper's Eq. 3 is a plain difference of summed cosines, with no temperature and no
+        # exponential; this divides by the temperature and exponentiates the negative pairs, which
+        # grows without bound as two patches of different segments align. UCAD_LOSS selects between
+        # them: 'noexp' keeps the temperature but drops the exponential, 'paper' takes Eq. 3 as written.
+        variant = os.environ.get('UCAD_LOSS', 'code')
+        if variant == 'paper':
+            cosine = similarity_matrix * temperature
+            return ((1-mask) * cosine - mask * cosine).mean()
+        if variant == 'noexp':
+            return (-similarity_matrix * mask + (1-mask) * similarity_matrix).mean()
+
         loss = (-similarity_matrix * mask + (1-mask) * similarity_matrix.exp()).mean()
 
         return loss
