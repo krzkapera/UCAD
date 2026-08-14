@@ -46,6 +46,26 @@ def main(**kwargs):
 
 
 @main.result_callback()
+def _mask_cosines(res):
+    """Mean cosine of patch pairs inside one SAM segment and across two, for one batch.
+
+    The loss pulls the first towards 1 and pushes the second towards -1. Nearest-neighbour scoring
+    needs the first to stay below 1, because a defect sits inside a segment: once every patch of a
+    segment maps to the same point, there is nothing left for the bank to be far from.
+    """
+    import torch
+    import torch.nn.functional as F
+
+    features = F.normalize(res["seg_feat"][0].detach(), dim=2)
+    similarity = torch.bmm(features, features.transpose(1, 2))
+    same = (res["labels"].unsqueeze(1) == res["labels"].unsqueeze(2)).float()
+    off_diagonal = 1 - torch.eye(features.shape[1], device=features.device).unsqueeze(0)
+
+    within = (similarity * same * off_diagonal).sum() / (same * off_diagonal).sum().clamp(min=1)
+    between = (similarity * (1 - same)).sum() / (1 - same).sum().clamp(min=1)
+    return float(within), float(between)
+
+
 def run(
     methods,
     results_path,
@@ -96,6 +116,8 @@ def run(
     _ckpt_dir = os.environ.get("UCAD_CKPT_DIR")
     _log_epochs = bool(os.environ.get("UCAD_LOG_EPOCHS"))
     _eval_untrained = bool(os.environ.get("UCAD_EVAL_UNTRAINED"))
+    _log_geometry = bool(os.environ.get("UCAD_LOG_GEOMETRY"))
+    _no_cpm = bool(os.environ.get("UCAD_NO_CPM"))
     _pending_prompt_state = None
     if _ckpt_dir:
         os.makedirs(_ckpt_dir, exist_ok=True)
@@ -181,6 +203,7 @@ def run(
                     # '''
                     PatchCore.prompt_model.train()
                     loss_list = [0.0]
+                    _within_list, _between_list = [], []
                     _epoch_data = dataloaders["training"] if epoch >= 0 else []
                     with tqdm.tqdm(_epoch_data, desc="training...", leave=False) as data_iterator:
                         for image in data_iterator:
@@ -193,12 +216,23 @@ def run(
                             res = PatchCore._embed_train_sam(image, provide_patch_shapes=True, image_path=image_paths)
                             loss = res['loss']
                             loss_list.append(loss.item())
+                            if _log_geometry:
+                                _within, _between = _mask_cosines(res)
+                                _within_list.append(_within)
+                                _between_list.append(_between)
                             optimizer.zero_grad()
                             if(loss!=0):
                                 loss.backward()
                             torch.nn.utils.clip_grad_norm_(PatchCore.prompt_model.parameters(), args.clip_grad)
                             optimizer.step()
-                        print("epoch:{} loss:{}".format(epoch,np.mean(loss_list)))    
+                        print("epoch:{} loss:{}".format(epoch,np.mean(loss_list)))
+                        if _log_geometry and _within_list:
+                            print(
+                                "GEOMETRY category:{} name:{} epoch:{} within:{} between:{}".format(
+                                    dataloader_count, dataloaders["training"].name, epoch,
+                                    np.mean(_within_list), np.mean(_between_list),
+                                )
+                            )
                     if lr_scheduler and epoch >= 0:
                         lr_scheduler.step(i)
 
@@ -502,16 +536,19 @@ def run(
                 # memory_feature = PatchCore.fit_with_limit_size(dataloaders["training"], memory_size)
                 # query_feature = PatchCore.get_mem_limit_size(dataloaders["training"], key_size)
                 cur_query_list = []
-                for key_count in range(len(list_of_dataloaders)):
+                for key_count in (range(len(list_of_dataloaders)) if not _no_cpm else []):
                     PatchCore.anomaly_scorer.fit(detection_features=[key_feature_list[key_count]])
                     query_scores, query_seg, labels_gt_query, masks_gt_query = PatchCore.predict(
                         dataloaders["testing"]
                     )
                     cur_query_list.append(np.sum(query_scores))
-                print(cur_query_list)
-                print('get query dataloader')
-                print(np.argmin(cur_query_list))
-                query_data_id = np.argmin(cur_query_list)
+                if not _no_cpm:
+                    print(cur_query_list)
+                    print('get query dataloader')
+                    print(np.argmin(cur_query_list))
+                # Without CPM there is no key to route by and no per-task memory: one knowledge
+                # base is overwritten by each task in turn, so every task is scored against the last.
+                query_data_id = len(list_of_dataloaders) - 1 if _no_cpm else np.argmin(cur_query_list)
                 PatchCore.set_dataloadercount(query_data_id)
                 PatchCore.prompt_model.set_cur_prompt(prompt_list[query_data_id])
                 PatchCore.prompt_model.eval()

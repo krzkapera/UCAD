@@ -739,6 +739,7 @@ class VisionTransformer(nn.Module):
                 labels[i] = torch.from_numpy(
                     cv2.resize(sam_score,(grid_w,grid_h),interpolation=interpolation)[:,:,0].flatten()).cuda()
             res['loss'] = torch.tensor(0).float().cuda()
+            res['labels'] = labels  # kept so callers can measure what the loss is doing to the geometry
             # loss for sam
             for k in range(len(res['seg_feat'])):
                 res['loss'] += self.contrastive_loss(res['seg_feat'][k], labels, temperature=0.5)

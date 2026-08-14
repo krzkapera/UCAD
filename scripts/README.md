@@ -69,6 +69,22 @@ simply having more tokens. Pass `--resize 384 --imagesize 384` for the 384 varia
 `UCAD_PROMPT_LEN` is the number of prefix tokens per layer, 1 by default. The paper reports a prompt
 of shape (15, 7, 768) and `args_dict.npy` carries `length=5`; neither reaches the model.
 
+`UCAD_LOG_GEOMETRY` prints, after every epoch, the mean cosine of patch pairs inside one SAM segment
+and across two:
+
+```
+GEOMETRY category:0 name:visa_candle epoch:7 within:0.83 between:0.21
+```
+
+The loss drives the first towards 1 and the second towards -1, and its optimum is the degenerate
+embedding where that is reached. Reading them beside `SINGLE_EPOCH` shows how far a run has gone
+towards it and what that costs.
+
+`UCAD_NO_CPM=1` removes the key-prompt-knowledge memory from the final evaluation: no routing, and
+every task scored against the last task's knowledge, which is the "single Knowledge base, reset every
+time a new task was introduced" of the paper's first ablation row. Pass `--epochs_num 0` with it for
+the row that has neither CPM nor SCL.
+
 `UCAD_SAM_INTERP=nearest` samples the SAM label map when resizing it to the feature grid instead of
 averaging it. The map holds segment ids and the loss compares them for equality, so bilinear - which
 is `cv2.resize`'s default and therefore what runs otherwise - leaves cells on segment boundaries
