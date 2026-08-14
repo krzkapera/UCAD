@@ -627,6 +627,11 @@ class VisionTransformer(nn.Module):
         # grows without bound as two patches of different segments align. UCAD_LOSS selects between
         # them: 'noexp' keeps the temperature but drops the exponential, 'paper' takes Eq. 3 as written.
         variant = os.environ.get('UCAD_LOSS', 'code')
+        if variant == 'zero':
+            # No learning signal at all, so the prompt never moves and every epoch scores with the
+            # same model. What still differs between epochs is the coreset draw, which is what the
+            # reported protocol averages over and selects from.
+            return (similarity_matrix * 0).mean()
         if variant == 'paper':
             cosine = similarity_matrix * temperature
             return ((1-mask) * cosine - mask * cosine).mean()
