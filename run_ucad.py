@@ -118,6 +118,7 @@ def run(
     _eval_untrained = bool(os.environ.get("UCAD_EVAL_UNTRAINED"))
     _log_geometry = bool(os.environ.get("UCAD_LOG_GEOMETRY"))
     _no_cpm = bool(os.environ.get("UCAD_NO_CPM"))
+    _run_inference = bool(os.environ.get("UCAD_INFERENCE"))
     _pending_prompt_state = None
     if _ckpt_dir:
         os.makedirs(_ckpt_dir, exist_ok=True)
@@ -499,108 +500,110 @@ def run(
 
         LOGGER.info("\n\n-----\n")
     # Inference
-    '''
-    for dataloader_count, dataloaders in enumerate(list_of_dataloaders):
-        LOGGER.info(
-            "Evaluating dataset [{}] ({}/{})...".format(
-                dataloaders["training"].name,
-                dataloader_count + 1,
-                len(list_of_dataloaders),
-            )
-        )
-
-        patchcore.utils.fix_seeds(seed, device)
-
-        dataset_name = dataloaders["training"].name
-        with device_context:
-            torch.cuda.empty_cache()
-            imagesize = dataloaders["training"].dataset.imagesize
-            sampler = methods["get_sampler"](
-                device,
-            )
-            PatchCore_list = methods["get_patchcore"](imagesize, sampler, device)
-            if len(PatchCore_list) > 1:
-                LOGGER.info(
-                    "Utilizing PatchCore Ensemble (N={}).".format(len(PatchCore_list))
+    # The released code has this whole phase inside a triple-quoted string, so a run never
+    # routes, never revisits a concept after later ones are learned, and therefore never
+    # measures forgetting. UCAD_INFERENCE=1 runs it.
+    if _run_inference:
+        for dataloader_count, dataloaders in enumerate(list_of_dataloaders):
+            LOGGER.info(
+                "Evaluating dataset [{}] ({}/{})...".format(
+                    dataloaders["training"].name,
+                    dataloader_count + 1,
+                    len(list_of_dataloaders),
                 )
-            aggregator = {"scores": [], "segmentations": []}
-            for i, PatchCore in enumerate(PatchCore_list):
+            )
+
+            patchcore.utils.fix_seeds(seed, device)
+
+            dataset_name = dataloaders["training"].name
+            with device_context:
                 torch.cuda.empty_cache()
-                if PatchCore.backbone.seed is not None:
-                    patchcore.utils.fix_seeds(PatchCore.backbone.seed, device)
-                LOGGER.info(
-                    "Training models ({}/{})".format(i + 1, len(PatchCore_list))
+                imagesize = dataloaders["training"].dataset.imagesize
+                sampler = methods["get_sampler"](
+                    device,
                 )
-                torch.cuda.empty_cache()
-                # current_task_id task_num
-                # memory_feature = PatchCore.fit_with_limit_size(dataloaders["training"], memory_size)
-                # query_feature = PatchCore.get_mem_limit_size(dataloaders["training"], key_size)
-                cur_query_list = []
-                for key_count in (range(len(list_of_dataloaders)) if not _no_cpm else []):
-                    PatchCore.anomaly_scorer.fit(detection_features=[key_feature_list[key_count]])
-                    query_scores, query_seg, labels_gt_query, masks_gt_query = PatchCore.predict(
+                PatchCore_list = methods["get_patchcore"](imagesize, sampler, device)
+                if len(PatchCore_list) > 1:
+                    LOGGER.info(
+                        "Utilizing PatchCore Ensemble (N={}).".format(len(PatchCore_list))
+                    )
+                aggregator = {"scores": [], "segmentations": []}
+                for i, PatchCore in enumerate(PatchCore_list):
+                    torch.cuda.empty_cache()
+                    if PatchCore.backbone.seed is not None:
+                        patchcore.utils.fix_seeds(PatchCore.backbone.seed, device)
+                    LOGGER.info(
+                        "Training models ({}/{})".format(i + 1, len(PatchCore_list))
+                    )
+                    torch.cuda.empty_cache()
+                    # current_task_id task_num
+                    # memory_feature = PatchCore.fit_with_limit_size(dataloaders["training"], memory_size)
+                    # query_feature = PatchCore.get_mem_limit_size(dataloaders["training"], key_size)
+                    cur_query_list = []
+                    for key_count in (range(len(list_of_dataloaders)) if not _no_cpm else []):
+                        PatchCore.anomaly_scorer.fit(detection_features=[key_feature_list[key_count]])
+                        query_scores, query_seg, labels_gt_query, masks_gt_query = PatchCore.predict(
+                            dataloaders["testing"]
+                        )
+                        cur_query_list.append(np.sum(query_scores))
+                    if not _no_cpm:
+                        print(cur_query_list)
+                        print('get query dataloader')
+                        print(np.argmin(cur_query_list))
+                    # Without CPM there is no key to route by and no per-task memory: one knowledge
+                    # base is overwritten by each task in turn, so every task is scored against the last.
+                    query_data_id = len(list_of_dataloaders) - 1 if _no_cpm else np.argmin(cur_query_list)
+                    PatchCore.set_dataloadercount(query_data_id)
+                    PatchCore.prompt_model.set_cur_prompt(prompt_list[query_data_id])
+                    PatchCore.prompt_model.eval()
+                    PatchCore.anomaly_scorer.fit(detection_features=[memory_feature_list[query_data_id]])
+                    scores, segmentations, labels_gt, masks_gt = PatchCore.predict_prompt(
                         dataloaders["testing"]
                     )
-                    cur_query_list.append(np.sum(query_scores))
-                if not _no_cpm:
-                    print(cur_query_list)
-                    print('get query dataloader')
-                    print(np.argmin(cur_query_list))
-                # Without CPM there is no key to route by and no per-task memory: one knowledge
-                # base is overwritten by each task in turn, so every task is scored against the last.
-                query_data_id = len(list_of_dataloaders) - 1 if _no_cpm else np.argmin(cur_query_list)
-                PatchCore.set_dataloadercount(query_data_id)
-                PatchCore.prompt_model.set_cur_prompt(prompt_list[query_data_id])
-                PatchCore.prompt_model.eval()
-                PatchCore.anomaly_scorer.fit(detection_features=[memory_feature_list[query_data_id]])
-                scores, segmentations, labels_gt, masks_gt = PatchCore.predict_prompt(
-                    dataloaders["testing"]
-                )
-                aggregator["scores"].append(scores)
-                aggregator["segmentations"].append(segmentations)
+                    aggregator["scores"].append(scores)
+                    aggregator["segmentations"].append(segmentations)
                 
-            scores = np.array(aggregator["scores"])
-            # print(scores.shape)
-            min_scores = scores.min(axis=-1).reshape(-1, 1)
-            max_scores = scores.max(axis=-1).reshape(-1, 1)
-            scores = (scores - min_scores) / (max_scores - min_scores)
-            scores = np.mean(scores, axis=0)
+                scores = np.array(aggregator["scores"])
+                # print(scores.shape)
+                min_scores = scores.min(axis=-1).reshape(-1, 1)
+                max_scores = scores.max(axis=-1).reshape(-1, 1)
+                scores = (scores - min_scores) / (max_scores - min_scores)
+                scores = np.mean(scores, axis=0)
 
-            segmentations = np.array(aggregator["segmentations"])
+                segmentations = np.array(aggregator["segmentations"])
             
-            min_scores = (
-                segmentations.reshape(len(segmentations), -1)
-                .min(axis=-1)
-                .reshape(-1, 1, 1, 1)
-            )
-            max_scores = (
-                segmentations.reshape(len(segmentations), -1)
-                .max(axis=-1)
-                .reshape(-1, 1, 1, 1)
-            )
-            segmentations = (segmentations - min_scores) / (max_scores - min_scores)
-            segmentations = np.mean(segmentations, axis=0)
+                min_scores = (
+                    segmentations.reshape(len(segmentations), -1)
+                    .min(axis=-1)
+                    .reshape(-1, 1, 1, 1)
+                )
+                max_scores = (
+                    segmentations.reshape(len(segmentations), -1)
+                    .max(axis=-1)
+                    .reshape(-1, 1, 1, 1)
+                )
+                segmentations = (segmentations - min_scores) / (max_scores - min_scores)
+                segmentations = np.mean(segmentations, axis=0)
             
-            end_time = time.time()
-            time_cost = (end_time - start_time)/len(dataloaders["testing"])
-            anomaly_labels = [
-                x[1] != "good" for x in dataloaders["testing"].dataset.data_to_iterate
-            ]
+                end_time = time.time()
+                time_cost = (end_time - start_time)/len(dataloaders["testing"])
+                anomaly_labels = [
+                    x[1] != "good" for x in dataloaders["testing"].dataset.data_to_iterate
+                ]
 
-            ap_seg = np.asarray(segmentations)
-            ap_seg = ap_seg.flatten()
+                ap_seg = np.asarray(segmentations)
+                ap_seg = ap_seg.flatten()
             
-            LOGGER.info("Computing evaluation metrics.")
-            auroc = patchcore.metrics.compute_imagewise_retrieval_metrics(
-                scores, anomaly_labels
-            )["auroc"]
-            ap_mask = np.asarray(masks_gt)
-            ap_mask = ap_mask.flatten().astype(np.int32)
-            pixel_ap = average_precision_score(ap_mask,ap_seg)
-            print('current task:{}/test task:{}, image_auc:{}, pixel_auc:{}, image_ap:{}, pixel_ap:{}, pixel_pro:{}, time_cost:{}'.format
-                        (dataloader_count+1,len(list_of_dataloaders),auroc,full_pixel_auroc,img_ap,pixel_ap,pixel_pro,time_cost))
+                LOGGER.info("Computing evaluation metrics.")
+                auroc = patchcore.metrics.compute_imagewise_retrieval_metrics(
+                    scores, anomaly_labels
+                )["auroc"]
+                ap_mask = np.asarray(masks_gt)
+                ap_mask = ap_mask.flatten().astype(np.int32)
+                pixel_ap = average_precision_score(ap_mask,ap_seg)
+                print('current task:{}/test task:{}, image_auc:{}, pixel_auc:{}, image_ap:{}, pixel_ap:{}, pixel_pro:{}, time_cost:{}'.format
+                            (dataloader_count+1,len(list_of_dataloaders),auroc,full_pixel_auroc,img_ap,pixel_ap,pixel_pro,time_cost))
             
-    '''
     # Store all results and mean scores to a csv-file.
     # limited result
     print('Average result with limited')

@@ -80,7 +80,16 @@ The loss drives the first towards 1 and the second towards -1, and its optimum i
 embedding where that is reached. Reading them beside `SINGLE_EPOCH` shows how far a run has gone
 towards it and what that costs.
 
-`UCAD_NO_CPM=1` removes the key-prompt-knowledge memory from the final evaluation: no routing, and
+`UCAD_INFERENCE=1` runs the task-agnostic inference phase. In the released code that phase - the
+one that routes a test image to a concept by its key, retrieves that concept's prompt and knowledge,
+and evaluates every concept once all of them have been learned - sits inside a triple-quoted string
+between `# Inference` and the results writing, so it never executes. What `results.csv` holds instead
+comes from the training loop: each concept scored against its own bank, immediately after it was
+learned. Nothing is ever re-evaluated later, so no forgetting can be observed, and the key routing is
+never exercised.
+
+`UCAD_NO_CPM=1` removes the key-prompt-knowledge memory from that inference phase, so it needs
+`UCAD_INFERENCE=1` to have any effect: no routing, and
 every task scored against the last task's knowledge, which is the "single Knowledge base, reset every
 time a new task was introduced" of the paper's first ablation row. Pass `--epochs_num 0` with it for
 the row that has neither CPM nor SCL.
