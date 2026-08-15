@@ -105,8 +105,15 @@ run can measure forgetting, and the published FM values have no source in this c
 number the code produces knows the task identity by construction, which is the assumption the paper
 sets out to remove.
 
-`UCAD_INFERENCE=1` runs the phase. It changes none of the averages, because routing is perfect - but
-that is now a measurement rather than something a reader had to assume.
+`UCAD_INFERENCE=1` runs the phase. Untrained, it changes none of the averages, because routing is
+perfect - but that is now a measurement rather than something a reader had to assume.
+
+After 25 epochs the phase reads lower than `results.csv` does, and the reason is not forgetting.
+What it stores per concept is one prompt and one bank, so it scores each concept with a single
+model, where `results.csv` reports the average of 25 epochs. Read that way - task-agnostic, single
+model, after the whole sequence has been learned - the method scores 0.9189 / 0.4248 on MVTec and
+0.7801 / 0.2337 on VisA, against 0.9153 / 0.4255 and 0.7872 / 0.2455 for the same thing untrained.
+That is the most honest number this code can produce, and training moves it by +0.004 and -0.007.
 
 ## Smaller things
 
