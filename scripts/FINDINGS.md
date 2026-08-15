@@ -1,140 +1,137 @@
 # What this code does, measured
 
-Every number below comes from this repository, run on Helios through `scripts/run_benchmark.sbatch`.
-Image AUROC and pixel AUPR, averaged over the benchmark's categories. Two readings appear
-throughout, because the code writes both and only ever reports the first:
+Every number below comes from this repository, run on Helios. Image AUROC and pixel AUPR, averaged
+over the benchmark's categories, in that order.
 
-- **bank 196** - `results/`, the memory the paper describes, one image's worth of patches per concept
-- **bank 1960** - `results_nolimit/`, computed in the same run from `--basic_size` and never mentioned
+The configuration is the one the paper describes and this code implements: ViT-B/16 pretrained on
+ImageNet-21k, features after block 5, prompt length 1, a bank of 196 vectors per concept, 224px,
+batch 8, 25 epochs, VisA on its official `split_csv/1cls.csv` split. Where a number rests on fewer
+than three seeds it says so.
 
-"0 epochs" is a single untrained model, no ensembling and no epoch selection. "25 epochs" is what the
-code reports: the mean of the 25 per-epoch score sets, at the epoch whose image AUROC on the test set
-is highest.
+## The paper reproduces
 
-The dataset is the per-category folder copy this code requires, not VisA's official `1cls.csv`
-split, so these numbers are internally comparable but not comparable to the wider literature.
+Headline tables:
 
-## The configured checkpoint is not the one that reproduces the paper
-
-`default_cfgs` in `patchcore/vision_transformer.py` has the `vit_base_patch16_224` entry edited: the
-augreg line is commented out and `imagenet21k/ViT-B_16.npz` put in its place, which is the original
-ImageNet-21k release with no ImageNet-1k fine-tuning. The docstring above the model function still
-describes the augreg checkpoint. With `timm==0.6.7` as `environment.yaml` pins, `register_model`
-honours that edit, so a run of this repository as released loads the 21k weights.
-
-VisA, twelve categories, image AUROC, three seeds:
-
-| checkpoint | 25 epochs, bank 196 | 0 epochs, bank 196 |
+| | paper | here |
 |---|---|---|
-| `orig_in21k` - the active line | **0.8069 +- 0.0126** | 0.7733 |
-| `augreg_in21k_ft_in1k` - the commented-out line | **0.8634 +- 0.0150** | 0.7937 |
-| `augreg2_in21k_ft_in1k` - what current timm resolves | **0.8725 +- 0.0046** | 0.7703 |
-| the paper | 0.874 | |
+| MVTec, image AUROC | 0.930 | 0.9259 (3 seeds) |
+| MVTec, pixel AUPR | 0.456 | 0.4512 (3 seeds) |
+| VisA, image AUROC | 0.874 | 0.8638 |
+| VisA, pixel AUPR | 0.300 | 0.2982 |
 
-The checkpoint the code disables lands on the published figure. The checkpoint it enables is 0.067
-below it, five standard deviations away. MVTec, one seed, shows the same ordering: 0.9254 for
-`orig_in21k`, 0.9353 for `augreg`, 0.9435 for `augreg2`, against 0.930 published.
+Table 5, the module ablation:
 
-## The contrastive loss makes the model worse, on every checkpoint and every configuration
-
-`UCAD_LOG_EPOCHS` reports each epoch's own image AUROC before the epochs are averaged. VisA, twelve
-categories, single model, bank 196:
-
-| configuration | untrained | after 1 epoch | after 25 epochs | best epoch |
+| | MVTec paper | MVTec here | VisA paper | VisA here |
 |---|---|---|---|---|
-| released, `augreg`, 3 seeds | 0.7937 | 0.759 / 0.790 / 0.791 | 0.700 / 0.693 / 0.679 | 2, 2, 6 |
-| released, `orig_in21k`, 3 seeds | 0.7733 | 0.742 / 0.732 / 0.737 | 0.734 / 0.700 / 0.708 | 4, 10, 5 |
-| block 7, bank 784 | 0.8535 | 0.8545 | 0.8101 | 5 (0.8750) |
+| no CPM, no SCL | 0.693 / 0.183 | 0.6692 / 0.1621 | 0.584 / 0.050 | 0.5862 / 0.0491 |
+| CPM, no SCL | 0.894 / 0.426 | 0.9153 / 0.4255 | 0.786 / 0.251 | 0.7872 / 0.2455 |
+| CPM and SCL | 0.930 / 0.456 | 0.9259 / 0.4512 | 0.874 / 0.300 | 0.8638 / 0.2982 |
 
-Training costs 0.09 to 0.11 image AUROC over twenty-five epochs at the released settings, and 0.044
-at the strongest configuration found here. What the reported number recovers is the epoch ensemble
-and the test-set epoch choice, not the loss. The epoch that scores best is an early one, and which
-one it is moves between seeds.
+Table 6, the knowledge-size ablation:
 
-## Two settings that were never varied are worth more than the training
-
-### Memory
-
-The bank size is the single largest lever. Both benchmarks, 0 epochs, block 7:
-
-| bank | VisA, 14x14 | MVTec, 28x28 |
-|---|---|---|
-| 196 | 0.8122 | - |
-| 392 | 0.8198 | 0.9524 |
-| 784 | 0.8535 | 0.9639 |
-| 1568 | 0.8673 | 0.9690 |
-| 1960 | 0.8802 | - |
-| 3136 | 0.8826 | 0.9716 |
-
-Still rising at 3136. The 1960 column of `results_nolimit` is in every run this code has ever
-produced: **on VisA an untrained model with that bank already scores 0.8876, above the 0.874 the
-paper reports for the trained one.**
-
-This is not free - it is four to sixteen times the memory the method advertises, and fixed small
-memory is the method's claim. It does say that the published figures measure a memory budget as much
-as they measure a loss.
-
-### Feature block
-
-Features are read after block 5 of 12. Nothing in the paper argues for 5. Full benchmarks, 0 epochs,
-bank 196:
-
-| block | MVTec | VisA |
-|---|---|---|
-| 5, as released | 0.9177 | 0.7937 |
-| 7 | - | 0.8122 |
-| 9 | 0.9395 | 0.7795 |
-
-The best block differs by benchmark, so this is a tuning knob rather than a fix - but block 5 is not
-the right value for either benchmark, and on MVTec the untrained model at block 9 scores 0.9395,
-above the 0.930 published for the trained one.
-
-## Grid resolution helps only if the bank grows with it
-
-The grid was hardcoded at 14x14 in the loss and in two reshapes, so this could not be varied before.
-MVTec, five categories, 0 epochs:
-
-| grid | bank 196 | bank = tokens per image |
-|---|---|---|
-| 7x7 (patch32) | 0.7659 | - |
-| 14x14 (patch16) | 0.8272 | 0.8481 |
-| 24x24 (patch16, 384px) | 0.8154 | 0.8367 |
-| 28x28 (patch8) | 0.7575 | **0.8633** |
-
-At a fixed 196 vectors a finer grid *loses*, because the coreset compresses four times harder. Give
-the bank room and the ordering reverses. At equal bank size the finer grid wins on MVTec (full
-benchmark, bank 784, block 7: 0.9639 against 0.9577, and pixel AUPR 0.5312 against 0.4717) and loses
-on VisA (0.8321 against 0.8535), which fits MVTec's defects being smaller than one patch of the
-coarse grid and VisA's being larger and more contextual.
-
-## The best untrained configurations beat the published numbers
-
-| | configuration | image AUROC | pixel AUPR | published |
+| bank | MVTec no SCL | MVTec SCL | VisA no SCL | VisA SCL |
 |---|---|---|---|---|
-| MVTec | block 7, 28x28, bank 784, 0 epochs | **0.9639** | **0.5312** | 0.930 |
-| VisA | block 7, 14x14, bank 3136, 0 epochs | **0.8826** | 0.3299 | 0.874 |
-| VisA | block 7, 14x14, bank 1960, 0 epochs | 0.8802 | 0.3300 | 0.874 |
+| 196, paper | 0.894 / 0.426 | 0.930 / 0.456 | 0.786 / 0.251 | 0.874 / 0.300 |
+| 196, here | 0.9153 / 0.4255 | 0.9259 / 0.4512 | 0.7872 / 0.2455 | 0.8638 / 0.2982 |
+| 392, paper | 0.921 / 0.452 | 0.936 / 0.461 | 0.818 / 0.255 | 0.893 / 0.307 |
+| 392, here | 0.9203 / 0.4485 | 0.9401 / 0.4614 | 0.8315 / 0.2716 | 0.8852 / 0.3069 |
+| 784, paper | 0.929 / 0.453 | 0.938 / 0.466 | 0.860 / 0.294 | 0.909 / 0.310 |
+| 784, here | 0.9272 / 0.4566 | 0.9406 / 0.4623 | 0.8583 / 0.2881 | 0.9031 / 0.3116 |
 
-At the paper's own memory budget of 196 the untrained model reaches 0.9395 on MVTec, still above the
-published figure, and 0.8122 on VisA, below it.
+Most cells land within 0.01 of the published one; the worst is MVTec's 196-vector no-SCL cell, at
++0.021. Getting there needs three things that are easy to get wrong: the ImageNet-21k checkpoint
+rather than any of timm's ImageNet-1k fine-tunes, which is worth up to 0.07 on VisA; VisA's official
+split rather than a per-category folder copy, worth a further 0.06 in the other direction; and
+block 5.
+
+## What the contrastive loss contributes: nothing
+
+Run the same 25 epochs with the loss forced to zero. The prompt never moves, so every epoch scores
+with the same model, and the only thing that differs between epochs is the coreset draw.
+
+| | MVTec | VisA |
+|---|---|---|
+| untrained, one reading | 0.9153 / 0.4255 | 0.7872 / 0.2455 |
+| **zero loss, 25 epochs, reported the way this code reports** | **0.9271 / 0.4520** | **0.8669 / 0.3009** |
+| SCL, 25 epochs, same reporting | 0.9259 / 0.4512 | 0.8638 / 0.2982 |
+
+Four comparisons out of four, learning nothing scores at least as well as learning with SCL. The
++0.088 image AUROC that Table 5 credits to SCL on VisA is +0.080 here without a single gradient step.
+
+The mechanism is in how the code reports. It scores the test set after every epoch, rescales each
+epoch's scores to 0..1, averages every epoch so far, and keeps the epoch whose image AUROC on the
+test set is highest. Averaging cancels independent noise; a maximum over 25 noisy readings of one
+test set is biased upward. Both need the epochs to differ from each other. In the no-SCL row there is
+no loss, hence no training, hence 25 identical models: averaging 25 copies is the identity, and the
+maximum of 25 equal numbers is that number. Both mechanisms are off in one row of the ablation and on
+in the other.
+
+So the ablation does not compare a loss against no loss. It compares one reading against the selected
+mean of 25, and SCL's role is to supply the variation that the reporting exploits. Coreset randomness
+supplies just as much.
+
+A single model's own image AUROC on VisA starts at 0.787 untrained, peaks near 0.80 at epoch 2 or 3 -
+which epoch varies with the seed - and falls to 0.74 by epoch 25, still falling at 100. The loss has
+no equilibrium: `-cos` on same-segment pairs is minimised when a segment collapses to a point,
+`exp(cos)` on different-segment pairs when segments are maximally spread, and nothing anchors the
+features to where they started. Its optimum is a degenerate embedding. A defect sits inside a
+segment, so collapsing segments removes exactly the variation the nearest-neighbour score reads.
+
+Writing the loss as the paper's Eq. 3 writes it - a plain difference of cosines, no temperature and
+no exponential - recovers 0.005 on VisA and leaves the shape unchanged: up for two or three epochs,
+down thereafter.
+
+## What CPM contributes: a great deal
+
+The first ablation row is the honest one, because neither side of it trains. Replacing the
+per-concept key-prompt-knowledge memory with a single bank that each task overwrites costs 0.25 image
+AUROC on MVTec and 0.20 on VisA. That is the paper's real result.
+
+Routing is exact. With every concept in memory, the key sends every test image to its own concept on
+both benchmarks: the routed reading and the each-concept-against-its-own-bank reading agree to four
+decimals, at 0.9153 / 0.4255 and 0.7872 / 0.2455.
+
+## The evaluation the released code never runs
+
+That routed reading needed a change to obtain. In `run_ucad.py` the whole task-agnostic inference
+phase - route by key, retrieve that concept's prompt and knowledge, evaluate every concept once all
+of them have been learned - sits between `# Inference` and the results writing **inside a
+triple-quoted string**, and never executes. `results.csv` is written from the training loop instead,
+where each concept is evaluated immediately after it is learned, against its own bank.
+
+Three things follow. The key routing, which is what makes the method task-agnostic, is not exercised
+by a run of this code. No concept is re-evaluated after later concepts are learned, so nothing in a
+run can measure forgetting, and the published FM values have no source in this code path. And every
+number the code produces knows the task identity by construction, which is the assumption the paper
+sets out to remove.
+
+`UCAD_INFERENCE=1` runs the phase. It changes none of the averages, because routing is perfect - but
+that is now a measurement rather than something a reader had to assume.
 
 ## Smaller things
 
 **The label map is resized bilinearly.** `cv2.resize` without an interpolation argument averages the
 SAM segment ids the map holds, and the loss compares those ids with `==`, so cells on segment
-boundaries end up matching nothing. Sampling them instead (`UCAD_SAM_INTERP=nearest`) is worth
-+0.008 image AUROC and -0.006 pixel AUPR over 25 epochs on five MVTec categories - real but not the
-explanation for anything.
+boundaries match nothing. Sampling them instead is worth +0.008 image AUROC over 25 epochs on five
+MVTec categories.
 
-**The prompt length in the paper is not the one in the code.** The paper reports a prompt of shape
-(15, 7, 768) and `args_dict.npy` carries `length=5`; the model is built with `prompt_length=1`. Over
-25 epochs on five MVTec categories: length 1 gives 0.8396, length 5 gives 0.8562, length 7 gives
-0.8463. The direction matches the paper, the magnitude does not.
+**The prompt in the paper is not the prompt in the code.** The paper adds a prompt to each layer's
+input, `k^i = f^i(k^{i-1} + p^i)`, and accounts for it as (15, 7, 768) floats, which the stated
+23.28MB total confirms. The code does prefix tuning on twelve layers with separate keys and values,
+24x768 per task, inherited with the rest of the prompt machinery from DualPrompt - `args_dict.npy`
+still carries `dataset='Split-CIFAR100'` from that codebase.
+
+**Two numbers in the paper disagree.** The text gives a learning rate of 0.0005, the appendix table
+gives 0.00005 for this method. The code uses 0.0005, with `sched='constant'`, so no schedule runs.
 
 **The backbone flags in the README command do nothing.** `-b wideresnet50 -le layer2 -le layer3` is
-carried over from PatchCore's script; `PatchCore.load` builds a ViT unconditionally and the
-wideresnet is never used.
+carried over from PatchCore's script; `PatchCore.load` builds a ViT unconditionally.
 
-**Three sizes were hardcoded.** The SAM label map at 14x14, the anomaly map at 224x224, and the
-k-means prototype reshape at `196*4*768` - the last of which is dead code on the path
-`run_ucad.py` actually takes, and would break for any batch size that is not a multiple of four.
+**Three sizes were hardcoded**: the SAM label map at 14x14, the anomaly map at 224x224, and a k-means
+prototype reshape at `196*4*768` that is dead on the path the code takes and would break for any
+batch size that is not a multiple of four.
+
+**The block and the bank were both explored by the paper** (Tables 7 and 6) and both matter more than
+the loss. Block 7 or 9 is worth up to +0.02 over block 5 at no cost; the paper kept 5 "for
+simplicity". A bank of 784 is worth +0.07 on VisA untrained - at four times the memory, which is the
+one thing the method is trying to economise.
