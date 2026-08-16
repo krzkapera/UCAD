@@ -119,6 +119,8 @@ def run(
     _log_geometry = bool(os.environ.get("UCAD_LOG_GEOMETRY"))
     _no_cpm = bool(os.environ.get("UCAD_NO_CPM"))
     _run_inference = bool(os.environ.get("UCAD_INFERENCE"))
+    _union_bank = bool(os.environ.get("UCAD_UNION_BANK"))
+    _log_prompts = bool(os.environ.get("UCAD_LOG_PROMPTS"))
     _pending_prompt_state = None
     if _ckpt_dir:
         os.makedirs(_ckpt_dir, exist_ok=True)
@@ -339,6 +341,14 @@ def run(
                 if(auroc>pr_auroc):
                     memory_feature_list[dataloader_count] = memory_feature
                     prompt_list[dataloader_count] = PatchCore.prompt_model.get_cur_prompt()
+                    if _log_prompts and dataloader_count > 0:
+                        _first = prompt_list[0].reshape(-1).float()
+                        _here = prompt_list[dataloader_count].reshape(-1).float()
+                        print("PROMPT concept:{} vs_concept0_maxdiff:{} cosine:{}".format(
+                            dataloader_count,
+                            float((_first - _here).abs().max()),
+                            float(torch.nn.functional.cosine_similarity(_first, _here, dim=0)),
+                        ))
                     if(pr_auroc!=0):
                         result_collect.pop()
                     pr_auroc = auroc
@@ -556,7 +566,15 @@ def run(
                     PatchCore.set_dataloadercount(query_data_id)
                     PatchCore.prompt_model.set_cur_prompt(prompt_list[query_data_id])
                     PatchCore.prompt_model.eval()
-                    PatchCore.anomaly_scorer.fit(detection_features=[memory_feature_list[query_data_id]])
+                    if _union_bank:
+                        # Every concept's vectors in one bank and no routing: the same total memory
+                        # as the per-concept arrangement, which separates keeping the data from
+                        # routing to it.
+                        PatchCore.anomaly_scorer.fit(
+                            detection_features=[np.concatenate(memory_feature_list[:len(list_of_dataloaders)])]
+                        )
+                    else:
+                        PatchCore.anomaly_scorer.fit(detection_features=[memory_feature_list[query_data_id]])
                     scores, segmentations, labels_gt, masks_gt = PatchCore.predict_prompt(
                         dataloaders["testing"]
                     )

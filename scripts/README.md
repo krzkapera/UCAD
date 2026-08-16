@@ -94,6 +94,16 @@ every task scored against the last task's knowledge, which is the "single Knowle
 time a new task was introduced" of the paper's first ablation row. Pass `--epochs_num 0` with it for
 the row that has neither CPM nor SCL.
 
+`UCAD_UNION_BANK=1` scores every test image against the concatenation of all concepts' knowledge
+instead of the routed concept's own, at the same total memory. It separates what the key-prompt-
+knowledge memory is worth from what simply not discarding earlier concepts is worth. Needs
+`UCAD_INFERENCE=1`.
+
+`UCAD_LOG_PROMPTS=1` prints how far each concept's stored prompt is from the first concept's. With no
+contrastive loss the prompt is never trained and `reset_prompt` draws from the same seed each time,
+so they should be identical - which would mean the prompt half of the key-prompt-knowledge memory
+carries no task-specific information at all.
+
 `UCAD_SAM_INTERP=nearest` samples the SAM label map when resizing it to the feature grid instead of
 averaging it. The map holds segment ids and the loss compares them for equality, so bilinear - which
 is `cv2.resize`'s default and therefore what runs otherwise - leaves cells on segment boundaries
