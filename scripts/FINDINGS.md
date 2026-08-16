@@ -49,14 +49,20 @@ block 5.
 Run the same 25 epochs with the loss forced to zero. The prompt never moves, so every epoch scores
 with the same model, and the only thing that differs between epochs is the coreset draw.
 
+Image AUROC, three seeds each:
+
 | | MVTec | VisA |
 |---|---|---|
-| untrained, one reading | 0.9153 / 0.4255 | 0.7872 / 0.2455 |
-| **zero loss, 25 epochs, reported the way this code reports** | **0.9271 / 0.4520** | **0.8669 / 0.3009** |
-| SCL, 25 epochs, same reporting | 0.9259 / 0.4512 | 0.8638 / 0.2982 |
+| untrained, one reading | 0.9153 | 0.7872 |
+| **zero loss, 25 epochs, reported the way this code reports** | **0.9271 +- 0.0011** | **0.8708 +- 0.0035** |
+| SCL, 25 epochs, same reporting | 0.9259 +- 0.0006 | 0.8644 +- 0.0018 |
 
-Four comparisons out of four, learning nothing scores at least as well as learning with SCL. The
-+0.088 image AUROC that Table 5 credits to SCL on VisA is +0.080 here without a single gradient step.
+On VisA the two sets of seeds do not overlap - the worst run that learned nothing beats the best run
+that learned with SCL - so training is not merely useless there, it costs 0.006. On MVTec the gap is
+0.001 with overlapping ranges, which is no difference at all. Neither benchmark shows SCL ahead.
+
+The +0.088 image AUROC that Table 5 credits to SCL on VisA is +0.084 here without a single gradient
+step.
 
 The mechanism is in how the code reports. It scores the test set after every epoch, rescales each
 epoch's scores to 0..1, averages every epoch so far, and keeps the epoch whose image AUROC on the
