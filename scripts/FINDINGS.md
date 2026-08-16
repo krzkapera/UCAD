@@ -81,15 +81,34 @@ Writing the loss as the paper's Eq. 3 writes it - a plain difference of cosines,
 no exponential - recovers 0.005 on VisA and leaves the shape unchanged: up for two or three epochs,
 down thereafter.
 
-## What CPM contributes: a great deal
+## What CPM contributes: keeping the data, and nothing else
 
-The first ablation row is the honest one, because neither side of it trains. Replacing the
+The first ablation row is the one worth trusting, because neither side of it trains. Replacing the
 per-concept key-prompt-knowledge memory with a single bank that each task overwrites costs 0.25 image
-AUROC on MVTec and 0.20 on VisA. That is the paper's real result.
+AUROC on MVTec and 0.20 on VisA - but that baseline throws earlier concepts away, and nothing forces
+a memory-based method to. Against the obvious alternative that keeps them, one bank holding every
+concept's vectors at the same total memory, CPM adds nothing:
 
-Routing is exact. With every concept in memory, the key sends every test image to its own concept on
-both benchmarks: the routed reading and the each-concept-against-its-own-bank reading agree to four
-decimals, at 0.9153 / 0.4255 and 0.7872 / 0.2455.
+| untrained | per-concept banks, routed | one bank holding all concepts |
+|---|---|---|
+| MVTec | 0.9153 / 0.4255 | 0.9154 / 0.4223 |
+| VisA | 0.7872 / 0.2455 | 0.7971 / 0.2435 |
+
+Storage is equal; the shared bank searches 15x more vectors per query, and the routed one pays for
+comparing the image against 15 key banks first, so the compute is comparable too.
+
+Routing itself is exact - with every concept in memory the key sends every test image to its own
+concept, and the routed reading matches the each-concept-against-its-own-bank reading to four
+decimals. It is simply not needed for the score.
+
+The prompt half of the memory carries nothing. With no contrastive loss the prompt is never trained
+and `reset_prompt` draws from the same seed for every concept, so the stored prompts are bit
+identical - measured, `maxdiff 0.0`, `cosine 1.0` for every concept against the first. With the loss
+on, after three epochs they differ by a cosine of 0.9995.
+
+So of key-prompt-knowledge: the prompt is inert, the key works but is redundant, and the knowledge is
+a PatchCore coreset that is not discarded. Forgetting is zero because nothing is shared, which is a
+property of that arrangement rather than a result.
 
 ## The evaluation the released code never runs
 
