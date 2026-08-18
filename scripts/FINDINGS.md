@@ -190,9 +190,10 @@ concepts, which is a property of that arrangement rather than a result.
 
 ## Supporting evidence
 
-**Training makes the single model worse, monotonically.** On VisA a single model scores 0.787
-untrained, peaks near 0.80 at epoch 2 or 3 - which epoch varies with the seed - and falls to 0.74 by
-epoch 25, still falling at 100.
+**Training makes the single model worse.** On VisA a single model scores 0.787 untrained, peaks near
+0.80 somewhere in the first few epochs - epoch 0, 2, 3 and 7 across four runs, so the peak is not a
+property of the schedule - and falls to 0.73-0.76 by epoch 25. A 100-epoch run on three categories
+keeps falling to the end.
 
 **The loss has no equilibrium.** `-cos` on same-segment pairs is minimised when a segment collapses
 to a single point; `exp(cos)` on different-segment pairs when segments are maximally spread; nothing
@@ -202,8 +203,9 @@ reads.
 
 **The geometry moves exactly that way.** Measured after each epoch on VisA and averaged over the 12
 categories, the mean cosine between patches of the same SAM segment rises 0.421 -> 0.582 over 15
-epochs and to 0.86 by epoch 86, while between segments it falls 0.181 -> 0.124, both monotonically,
-and image AUROC peaks at epoch 1. Per category the correlation between the two is negative in 10 of
+epochs while between segments it falls 0.181 -> 0.124, both monotonically, and image AUROC peaks at
+epoch 1. Followed further on one category, macaroni2 reaches 0.858 within-segment cosine by epoch 86,
+so the drift does not level off - it is heading for the collapse the loss is minimised by. Per category the correlation between the two is negative in 10 of
 12, from -0.17 to -0.58. The drift is unambiguous; its link to the quality drop is an association,
 not an isolated cause - one category loses quality without collapsing at all.
 

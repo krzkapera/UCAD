@@ -115,8 +115,8 @@ are effectively two samples. The per-category table below is the first of them.
 | zipper | 0.9498 +- 0.0027 | 0.938 | 0.4014 +- 0.0180 | 0.398 |
 | **average** | **0.9259** | **0.930** | **0.4512** | **0.456** |
 
-Mean absolute deviation 0.0089 on image AUROC and 0.0088 on pixel AUPR; ten of fifteen categories
-within 0.01 on image AUROC. The one real outlier is screw, low in both metrics.
+Mean absolute deviation 0.0089 on both metrics; ten of fifteen categories within 0.01 on image AUROC
+and twelve of fifteen on pixel AUPR. The one real outlier is screw, low in both.
 
 ### VisA, per category, official split, one seed
 
@@ -176,8 +176,8 @@ Set `UCAD_FEATURE_BLOCK`. One seed per cell.
 | 7 | 0.936 / 0.444 | 0.9311 / 0.4399 | 0.872 / 0.267 | 0.8692 / 0.2700 |
 | 9 | 0.906 / 0.420 | 0.9292 / 0.4334 | 0.853 / 0.248 | 0.8611 / 0.2538 |
 
-Blocks 3, 5, 7 and 9 land within 0.010 of the published cell on VisA and within 0.005 on MVTec, apart
-from block 9 on MVTec at +0.023. Block 1 does not: +0.080 image AUROC on MVTec and +0.051 pixel AUPR.
+Blocks 3 to 9 land within 0.011 of the published cell on VisA and within 0.005 on MVTec, apart from
+block 9 on MVTec at +0.023. Block 1 does not: +0.080 image AUROC on MVTec and +0.051 pixel AUPR.
 The shape matches - the first block is much the worst, the middle blocks are flat within about 0.01,
 and quality falls off again by block 9 - so the paper's choice to keep block 5 "for simplicity" is
 well supported: the best block here beats it by 0.006 on MVTec and 0.010 on VisA, both at one seed

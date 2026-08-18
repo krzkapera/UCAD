@@ -117,8 +117,9 @@ of 7 layers. The additive equation favours the second. The code does neither: pr
 attention keys and values of twelve layers, 24x768 per task, which is 3.4x more than the paper's own
 memory accounting allows for.
 
-Prompt length is the one part of this we could test. Over 25 epochs on five MVTec categories: length 1
-gives 0.8396, length 5 gives 0.8562, length 7 gives 0.8463. The direction matches the paper, the
+Prompt length is the one part of this we could test. Over 25 epochs on five MVTec categories with the
+`augreg_in21k_ft_in1k` checkpoint: length 1 gives 0.8396, length 5 gives 0.8562, length 7 gives
+0.8463. The direction matches the paper, the
 magnitude explains nothing.
 
 **Re-weighting.** The paper's Eq. 5-6 re-weight the nearest-neighbour distance by its neighbours. The
@@ -132,7 +133,9 @@ it. **We never tested 5.**
 `cv2.resize` without an interpolation argument averages the segment ids the map holds, and the loss
 compares those ids with `==`, so cells on segment boundaries end up matching nothing. Sampling them
 instead (`UCAD_SAM_INTERP=nearest`) is worth +0.008 image AUROC and -0.006 pixel AUPR over 25 epochs
-on five MVTec categories, and nothing at 28x28. Real, and not an explanation for anything.
+on five MVTec categories with the `augreg_in21k_ft_in1k` checkpoint, and -0.002 at a 28x28 grid, where
+we had expected more of it because a finer grid has more segment boundaries. Real, small, and not an
+explanation for anything.
 
 We also ran both benchmarks against a second mask source (SAM2 instead of SAM-B) in the pyCLAD
 implementation earlier: no systematic effect on whether training helps.

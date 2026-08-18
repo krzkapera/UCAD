@@ -26,10 +26,13 @@ official split.
 | that mean, at the epoch with the best test-set AUROC | 0.8725 *(pyCLAD)* / 0.8723 *(here)* |
 | published | 0.874 |
 
-The ensemble is worth **+0.129** and the epoch selection a further **+0.044**. Both are needed to reach
-the published figure, and neither appears in the paper. The two implementations agree on the total to
-0.0002, which is the strongest evidence we have that we understand what the code does: two independent
-codebases, put through the same protocol, land on the same number.
+The ensemble is worth **+0.129** and the epoch selection a further **+0.039**, both measured in pyCLAD,
+which is the only one of the two where a single model can be read at all - this code has no way to
+report one. In this code the selection alone is worth **+0.0436**, from 0.8287 to 0.8723. Neither
+mechanism appears in the paper, and both are needed to reach the published figure. The two
+implementations agree on the total to 0.0002, which is the strongest evidence we have that we
+understand what the code does: two independent codebases, put through the same protocol, land on the
+same number.
 
 On the official split with the checkpoint the paper states, we have the two ends of the same
 decomposition but not its middle, because the code only ever reports the selected ensemble: a single
