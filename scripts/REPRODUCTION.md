@@ -162,13 +162,52 @@ Set `--memory_size`. The "no SCL" column is `--epochs_num 0`.
 
 ### Table 7, the feature-layer ablation
 
-Set `UCAD_FEATURE_BLOCK`.
+Set `UCAD_FEATURE_BLOCK`. One seed per cell.
 
-*(pending - the runs are in flight)*
+| block | MVTec paper | MVTec here | VisA paper | VisA here |
+|---|---|---|---|---|
+| 1 | 0.840 / 0.399 | 0.9200 / 0.4495 | 0.806 / 0.143 | 0.8272 / 0.1747 |
+| 3 | 0.934 / 0.451 | 0.9323 / 0.4552 | 0.876 / 0.283 | 0.8737 / 0.2826 |
+| 5 | 0.930 / 0.456 | 0.9259 / 0.4512 | 0.874 / 0.300 | 0.8638 / 0.2982 |
+| 7 | 0.936 / 0.444 | 0.9311 / 0.4399 | 0.872 / 0.267 | 0.8692 / 0.2700 |
+| 9 | 0.906 / 0.420 | 0.9292 / 0.4334 | 0.853 / 0.248 | 0.8611 / 0.2538 |
+
+Blocks 3, 5, 7 and 9 land within 0.010 of the published cell on VisA and within 0.005 on MVTec, apart
+from block 9 on MVTec at +0.023. Block 1 does not: +0.080 image AUROC on MVTec and +0.051 pixel AUPR.
+The shape matches - the first block is much the worst, the middle blocks are flat within about 0.01,
+and quality falls off again by block 9 - so the paper's choice to keep block 5 "for simplicity" is
+well supported: the best block here beats it by 0.006 on MVTec and 0.010 on VisA, both at one seed
+and both smaller than the spread between seeds elsewhere in this document.
 
 ### Forgetting
 
-*(pending - the runs are in flight)*
+The Forgetting Measure needs the matrix of "concept j's score after concept k was learned", for every
+k >= j. The released code never revisits a concept, so it cannot produce that matrix;
+`UCAD_LOG_FM=1` does, by routing and re-scoring every concept learned so far each time a new one
+finishes. It costs O(T^2) test passes on top of training.
+
+| | tasks | misrouted images | avg FM (Eq. 7) | worst single drop | paper |
+|---|---|---|---|---|---|
+| MVTec, 0 epochs | 15 | 0 | 0.000000 | 0.000000 | - |
+| MVTec, 25 epochs | 15 | 0 | 0.000000 | 0.000000 | 0.010 |
+| VisA, 0 epochs | 12 | 0 | 0.000000 | 0.000000 | - |
+| VisA, 25 epochs | 12 | 0 | 0.000000 | 0.000000 | 0.039 |
+
+Not approximately zero - exactly. Every earlier concept repeats its just-learned AUROC bit for bit as
+later concepts join the memory:
+
+```
+FM_MATRIX learned:0 eval:0 routed:0 auroc:0.9984126984126984
+FM_MATRIX learned:1 eval:0 routed:0 auroc:0.9984126984126984
+FM_MATRIX learned:1 eval:1 routed:1 auroc:0.715704647676162
+FM_MATRIX learned:2 eval:0 routed:0 auroc:0.9984126984126984
+FM_MATRIX learned:2 eval:1 routed:1 auroc:0.715704647676162
+```
+
+That follows from the architecture: nothing is shared between concepts, so the only thing that could
+move an earlier concept's score is the key routing to a different concept, and `routed` equals `eval`
+on every one of the 1725 MVTec and 2162 VisA test images. The published 0.010 and 0.039 therefore have
+no source in this code or in this design; the honest number for this architecture is 0.
 
 ## Things that will trip you up
 
