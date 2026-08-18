@@ -558,10 +558,16 @@ class VisionTransformer(nn.Module):
         self.e_prompt.__init__()
 
     def get_cur_prompt(self,dataloader_count=None):
+        # Under UCAD_NO_PROMPT there is no prompt to store, so the CPM keeps a None in that slot and
+        # restoring it is a no-op. Every concept then scores with the same unprompted backbone.
+        if not self.use_e_prompt:
+            return None
         return self.e_prompt.get_prompt().clone().detach()
         # torch.save(self.e_prompt,'./models/prompt'+str(dataloader_count)+'.pt')
 
     def set_cur_prompt(self,saved_prompt,dataloader_count=None):
+        if not self.use_e_prompt:
+            return
         self.e_prompt.set_prompt(saved_prompt)
         # self.e_prompt.load_state_dict(torch.load('./models/prompt'+str(dataloader_count)+'.pt'))
 

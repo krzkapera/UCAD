@@ -122,6 +122,7 @@ def run(
     _union_bank = bool(os.environ.get("UCAD_UNION_BANK"))
     _log_prompts = bool(os.environ.get("UCAD_LOG_PROMPTS"))
     _log_fm = bool(os.environ.get("UCAD_LOG_FM"))
+    _no_prompt = bool(os.environ.get("UCAD_NO_PROMPT"))
     _pending_prompt_state = None
     if _ckpt_dir:
         os.makedirs(_ckpt_dir, exist_ok=True)
@@ -208,7 +209,7 @@ def run(
                     PatchCore.prompt_model.train()
                     loss_list = [0.0]
                     _within_list, _between_list = [], []
-                    _epoch_data = dataloaders["training"] if epoch >= 0 else []
+                    _epoch_data = dataloaders["training"] if epoch >= 0 and not _no_prompt else []
                     with tqdm.tqdm(_epoch_data, desc="training...", leave=False) as data_iterator:
                         for image in data_iterator:
                             # if(image["image"].shape[0]<2):

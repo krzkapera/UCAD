@@ -122,7 +122,11 @@ class PatchCore(torch.nn.Module):
             g_prompt_length=0,
             g_prompt_layer_idx=[],
             use_prefix_tune_for_g_prompt=True,
-            use_e_prompt=True,
+            # UCAD_NO_PROMPT drops the prefix tokens from every block, so the scoring backbone
+            # becomes the same frozen ViT the key is taken from and the method reduces to a coreset
+            # of unprompted features. There is then nothing to train, and run_ucad.py skips the
+            # training pass accordingly.
+            use_e_prompt=not bool(os.environ.get("UCAD_NO_PROMPT")),
             e_prompt_layer_idx=[0,1,2,3,4,5,6,7,8,9,10,11],
             use_prefix_tune_for_e_prompt=True,
             same_key_value=False,
