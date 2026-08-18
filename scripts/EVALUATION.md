@@ -41,9 +41,10 @@ selected ensemble, and 0.7872 untrained. The middle row would need the unselecte
 code does not write.
 
 The epoch selection is a leak - the epoch is chosen using the labels of the test set the result is then
-reported on. Two symptoms show it is fitting noise rather than finding a stopping point: the epoch it
-picks moves between seeds (candle 2/0/3, capsules 10/24/22, cashew 15/23/24), and the metric it does
-not optimise gets slightly worse, pixel AUPR falling from 0.3280 to 0.3269.
+reported on. Two symptoms show it is fitting noise rather than finding a stopping point, both measured
+on the folder copy: the epoch it picks moves between seeds (candle 2/0/3, capsules 10/24/22, cashew
+15/23/24), and the metric it does not optimise gets slightly worse, pixel AUPR falling from 0.3280 to
+0.3269.
 
 The ensemble is not a leak - it uses no labels - but it is a different method from the one described.
 It stores and averages 25 models' opinions, which costs 25 forward passes over the test set per
@@ -81,15 +82,22 @@ feature geometry monotonically with training while detection quality moves up an
 trend, so a criterion that tracks the geometry tracks the epoch count.
 
 We expected the official split to calm the epoch-to-epoch noise, since it puts 100 normal images in
-each category's test set instead of 20. It does not: the per-epoch swings within one run reach 0.42 on
-both.
+each category's test set instead of 20, and it partly does. Measured in this implementation, the
+largest within-category swing across the 25 epochs of one run falls from 0.33-0.41 on the folder copy
+to 0.23-0.24 on the official split, and the median category's swing from 0.25-0.29 to 0.16-0.17. So
+roughly a third of the instability was the estimate rather than the model - and the remaining two
+thirds are enough to leave every conclusion in the table above unchanged. An earlier version of this
+file said the noise did not fall at all, which was wrong: it was comparing a folder-copy figure
+against itself.
 
 ## What an honest protocol would look like
 
 - Train. Take **one** model: the last epoch, or an epoch chosen on a validation split disjoint from the
   test set. Evaluate it once.
-- Report the spread over at least three seeds. A single VisA category moves by +-0.07 between seeds and
-  the twelve-category average by +-0.03, so a difference smaller than that is not a result.
+- Report the spread over at least three seeds. On the folder copy a single VisA category moves by
+  +-0.07 between seeds and the twelve-category average by +-0.03; on the official split the average
+  moves by +-0.002 over two runs of the same configuration. A difference smaller than the spread you
+  measure is not a result.
 - If models are ensembled, say so, and count what they cost - an ensemble of 25 is not the method the
   paper describes.
 - Never choose anything using the labels of the set you report on.

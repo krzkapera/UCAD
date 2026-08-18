@@ -79,14 +79,16 @@ if (auroc == 1):
 ```
 
 None of this is in the paper, which describes one model per concept and a single evaluation at the
-end. On MVTec the early stop fires on five of fifteen categories.
+end. How often the early stop fires depends on the checkpoint: with the one the paper states it fires
+on two of fifteen MVTec categories, bottle and leather; with timm's ImageNet-1k fine-tune, which puts
+five categories at exactly 1.0, it fires on five.
 
 **What an honest protocol looks like.** Train; take *one* model - the last epoch, or an epoch chosen
 on a validation split that is disjoint from the test set; evaluate it once; report the spread over
 several seeds. If several models are ensembled, say so, and count the memory and compute they cost,
 because an ensemble of 25 is a different method from the one the paper describes. Under that protocol
-the method scores 0.74-0.80 on VisA as a single model depending on the epoch, against 0.8638 as the
-code reports it.
+the method scores 0.73-0.80 on VisA as a single model depending on which epoch you take, against
+0.8638 as the code reports it.
 
 ## The experiment: 25 epochs with no loss at all
 

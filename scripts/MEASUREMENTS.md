@@ -32,11 +32,11 @@ Read on averages alone this looks like the paper matches the ImageNet-1k fine-tu
 does not claim. Read per category it says the opposite. Mean absolute deviation from the published
 per-category tables:
 
-| | VisA | MVTec |
+| | VisA (3 seeds) | MVTec |
 |---|---|---|
-| `orig_in21k` | 0.0801 | **0.0089** |
-| `augreg_in21k_ft_in1k` | 0.0366 | 0.0338 |
-| `augreg2_in21k_ft_in1k` | 0.0346 | 0.0307 |
+| `orig_in21k` | 0.0801 | **0.0089** (3 seeds) |
+| `augreg_in21k_ft_in1k` | 0.0366 | 0.0338 (1 seed) |
+| `augreg2_in21k_ft_in1k` | 0.0346 | 0.0307 (3 seeds) |
 
 MVTec identifies the checkpoint unambiguously - `orig_in21k` matches ten of fifteen categories within
 0.01 - while VisA on the folder copy matches none of them. That was the clue that the VisA gap was the
@@ -93,7 +93,8 @@ Still rising at 3136. Two consequences worth keeping:
 **Untrained configurations beat the published numbers**, at more memory: MVTec 0.9639 / 0.5312 at
 block 7, 28x28, bank 784 against 0.930 / 0.456 published, and on the folder copy VisA 0.8826 at
 block 7, bank 3136 against 0.874. At the paper's own budget of 196 the untrained model still beats the
-published MVTec figure (0.9395 at block 9) but not the VisA one (0.8122 at block 7, folder copy).
+published MVTec figure (0.9395 at block 9, on the `augreg_in21k_ft_in1k` checkpoint - we never ran
+that combination with `orig_in21k`) but not the VisA one (0.8122 at block 7, folder copy).
 
 On the official split with the checkpoint the paper states, the same point holds at 196: untrained
 0.7872 against 0.874 published, so VisA needs the extra memory to overtake it, while MVTec does not.
