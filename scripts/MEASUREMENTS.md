@@ -123,11 +123,38 @@ Prompt length is the one part of this we could test. Over 25 epochs on five MVTe
 0.8463. The direction matches the paper, the
 magnitude explains nothing.
 
-**Re-weighting.** The paper's Eq. 5-6 re-weight the nearest-neighbour distance by its neighbours. The
-CLI default `--anomaly_scorer_num_nn 5` would enable that; the README command passes 1, which disables
-it. **We never tested 5.**
+**Re-weighting is unreachable, because the flag that would enable it is dropped.** The paper's Eq. 5-6
+re-weight the nearest-neighbour distance by its neighbours, which needs more than one neighbour.
+`run_ucad.py` offers `--anomaly_scorer_num_nn`, defaulting to 5, and passes it on:
 
-**Patch neighbourhood.** `--patchsize` defaults to 3 and the README passes 1. **We never tested 3.**
+```python
+                anomaly_scorer_num_nn=anomaly_scorer_num_nn,
+```
+
+but `PatchCore.load` spells the parameter without the "r":
+
+```python
+        anomaly_score_num_nn=1,
+```
+
+and its signature ends in `**kwargs`, so the misspelled argument is swallowed and the scorer is always
+built with **one** neighbour whatever the flag says. Measured: `--anomaly_scorer_num_nn 5` gives
+0.9153 / 0.4255 on MVTec and 0.7872 / 0.2455 on VisA, bit for bit what `1` gives. The README's
+`--anomaly_scorer_num_nn 1` is a no-op that happens to match the default, and Eq. 5-6 cannot be
+switched on from the command line at all.
+
+**Patch neighbourhood: the flag the README overrides is load-bearing.** `--patchsize` sets the
+neighbourhood of patch features pooled into one descriptor. `PatchCore.load` defaults it to 3, PatchCore's
+own value; the README passes 1. Untrained, with the checkpoint the paper states:
+
+| | patchsize 1 (README) | patchsize 3 (default) |
+|---|---|---|
+| MVTec | 0.9153 / 0.4255 | 0.6011 / 0.2196 |
+| VisA | 0.7872 / 0.2455 | 0.5254 / 0.0454 |
+
+A 0.31 and 0.26 drop. Pooling a 3x3 neighbourhood of a 14x14 grid mixes a third of the image into every
+descriptor, which is fatal for nearest-neighbour scoring. Omit `--patchsize 1` and the method collapses
+to little better than chance on VisA - and neither the paper nor the code comments say so.
 
 ## The SAM label map
 

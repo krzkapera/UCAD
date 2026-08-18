@@ -45,7 +45,8 @@ process's address space.
 | VisA split | official `1cls.csv` | see above, worth 0.06 |
 | feature block | 5 of 12 | hardcoded in `forward_features`; the paper's Table 7 sweeps it and keeps 5 "for simplicity" |
 | bank per concept | 196 | `--memory_size 196`; the code also computes a 1960-vector reading into `results_nolimit/` that the paper never mentions |
-| patch neighbourhood / scorer | `--patchsize 1 --anomaly_scorer_num_nn 1` | the CLI defaults are 3 and 5; the README command overrides both |
+| patch neighbourhood | `--patchsize 1` | the CLI default is 3 and it is not harmless: leaving it out costs 0.31 image AUROC on MVTec and 0.26 on VisA |
+| scorer neighbours | `--anomaly_scorer_num_nn 1` | inert - `PatchCore.load` spells the parameter `anomaly_score_num_nn` and absorbs the other into `**kwargs`, so the scorer always uses 1 |
 | input | 224, resize then centre crop | |
 | epochs / batch / lr | 25 / 8 / 5e-4, constant schedule | the paper's text says 5e-4, its appendix table says 5e-5 |
 
