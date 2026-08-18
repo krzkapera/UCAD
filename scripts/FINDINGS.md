@@ -1,169 +1,216 @@
-# What this code does, measured
+# How we know the contrastive loss contributes nothing
 
-Every number below comes from this repository, run on Helios. Image AUROC and pixel AUPR, averaged
-over the benchmark's categories, in that order.
+Written for someone who has not seen this project. It sets out what UCAD does, what its code
+reports, and the one experiment that settles what the contrastive loss is worth. Every number here
+was produced by this repository; `REPRODUCTION.md` says how to produce them.
 
-The configuration is the one the paper describes and this code implements: ViT-B/16 pretrained on
-ImageNet-21k, features after block 5, prompt length 1, a bank of 196 vectors per concept, 224px,
-batch 8, 25 epochs, VisA on its official `split_csv/1cls.csv` split. Where a number rests on fewer
-than three seeds it says so.
+## The method in one page
 
-## The paper reproduces
+UCAD learns a sequence of object categories - "concepts" - one at a time, and must afterwards detect
+defects in any of them without being told which category a test image belongs to.
 
-Headline tables:
+For each concept it stores three things, which the paper calls the key-prompt-knowledge memory (CPM):
 
-| | paper | here |
-|---|---|---|
-| MVTec, image AUROC | 0.930 | 0.9259 (3 seeds) |
-| MVTec, pixel AUPR | 0.456 | 0.4512 (3 seeds) |
-| VisA, image AUROC | 0.874 | 0.8638 |
-| VisA, pixel AUPR | 0.300 | 0.2982 |
+- **knowledge**: 196 feature vectors summarising that concept's normal images
+- **key**: 196 feature vectors used to recognise which concept a test image belongs to
+- **prompt**: a small set of learnable parameters injected into a frozen ViT-B/16
 
-Table 5, the module ablation:
+Scoring a test image is PatchCore's procedure. The image becomes a 14x14 grid of patch features. Each
+patch's anomaly score is its distance to the **nearest** vector in the concept's knowledge bank, and
+the image's score is the maximum over its patches. So the knowledge bank is the whole detector: a
+patch that resembles something in the bank is normal, one that resembles nothing in it is anomalous.
 
-| | MVTec paper | MVTec here | VisA paper | VisA here |
-|---|---|---|---|---|
-| no CPM, no SCL | 0.693 / 0.183 | 0.6692 / 0.1621 | 0.584 / 0.050 | 0.5862 / 0.0491 |
-| CPM, no SCL | 0.894 / 0.426 | 0.9153 / 0.4255 | 0.786 / 0.251 | 0.7872 / 0.2455 |
-| CPM and SCL | 0.930 / 0.456 | 0.9259 / 0.4512 | 0.874 / 0.300 | 0.8638 / 0.2982 |
+The prompt is what the contrastive loss (SCL) trains, for 25 epochs per concept, using SAM
+segmentation masks: patch features inside one SAM segment are pulled together, patches in different
+segments are pushed apart.
 
-Table 6, the knowledge-size ablation:
+The paper credits SCL with **+0.088 image AUROC on VisA** (Table 5: 0.786 without it, 0.874 with it).
+That number is what this document is about.
 
-| bank | MVTec no SCL | MVTec SCL | VisA no SCL | VisA SCL |
-|---|---|---|---|---|
-| 196, paper | 0.894 / 0.426 | 0.930 / 0.456 | 0.786 / 0.251 | 0.874 / 0.300 |
-| 196, here | 0.9153 / 0.4255 | 0.9259 / 0.4512 | 0.7872 / 0.2455 | 0.8638 / 0.2982 |
-| 392, paper | 0.921 / 0.452 | 0.936 / 0.461 | 0.818 / 0.255 | 0.893 / 0.307 |
-| 392, here | 0.9203 / 0.4485 | 0.9401 / 0.4614 | 0.8315 / 0.2716 | 0.8852 / 0.3069 |
-| 784, paper | 0.929 / 0.453 | 0.938 / 0.466 | 0.860 / 0.294 | 0.909 / 0.310 |
-| 784, here | 0.9272 / 0.4566 | 0.9406 / 0.4623 | 0.8583 / 0.2881 | 0.9031 / 0.3116 |
+## What the code reports, and what the paper says about it
 
-Most cells land within 0.01 of the published one; the worst is MVTec's 196-vector no-SCL cell, at
-+0.021. Getting there needs three things that are easy to get wrong: the ImageNet-21k checkpoint
-rather than any of timm's ImageNet-1k fine-tunes, which is worth up to 0.07 on VisA; VisA's official
-split rather than a per-category folder copy, worth a further 0.06 in the other direction; and
-block 5.
+The paper's Metrics section says only this:
 
-## What the contrastive loss contributes: nothing
+> we utilize Area Under the Receiver Operating Characteristics (AUROC/AUC) ... For pixel-level
+> anomaly segmentation capability, we employ Area Under Precision-Recall (AUPR/AP) ... During the
+> inference, we evaluate the model after training on all tasks.
 
-Run the same 25 epochs with the loss forced to zero. The prompt never moves, so every epoch scores
-with the same model, and the only thing that differs between epochs is the coreset draw.
+A reader takes that to mean: train the model, then measure it. The code does something else, in three
+steps.
 
-Image AUROC, three seeds each:
+**One: it evaluates the test set after every epoch and keeps every result.**
+
+```python
+for epoch in range(epochs):
+    ...train one epoch...
+    PatchCore.prompt_model.eval()
+    memory_feature = PatchCore.fit_with_limit_size_prompt(dataloaders["training"], memory_size)
+    PatchCore.anomaly_scorer.fit(detection_features=[memory_feature])
+    scores, segmentations, labels_gt, masks_gt = PatchCore.predict_prompt(dataloaders["testing"])
+    aggregator["scores"].append(scores)
+```
+
+**Two: it rescales each epoch's scores and averages all of them.** The reported score of an image is
+not one model's score, it is the mean of twenty-five models' scores:
+
+```python
+scores = np.array(aggregator["scores"])
+min_scores = scores.min(axis=-1).reshape(-1, 1)
+max_scores = scores.max(axis=-1).reshape(-1, 1)
+scores = (scores - min_scores) / (max_scores - min_scores)
+scores = np.mean(scores, axis=0)
+```
+
+**Three: of those twenty-five running averages it keeps the one that scores best on the test set.**
+
+```python
+if (auroc > pr_auroc):
+    memory_feature_list[dataloader_count] = memory_feature
+    prompt_list[dataloader_count] = PatchCore.prompt_model.get_cur_prompt()
+```
+
+`auroc` there is computed against `anomaly_labels`, the test set's ground truth. The state that ends
+up in memory, and the number that ends up in the results file, are chosen by looking at the labels of
+the data the result is then reported on. A fourth line stops a category the moment it is perfect:
+
+```python
+if (auroc == 1):
+    break
+```
+
+None of this is in the paper, which describes one model per concept and a single evaluation at the
+end. On MVTec the early stop fires on five of fifteen categories.
+
+**What an honest protocol looks like.** Train; take *one* model - the last epoch, or an epoch chosen
+on a validation split that is disjoint from the test set; evaluate it once; report the spread over
+several seeds. If several models are ensembled, say so, and count the memory and compute they cost,
+because an ensemble of 25 is a different method from the one the paper describes. Under that protocol
+the method scores 0.74-0.80 on VisA as a single model depending on the epoch, against 0.8638 as the
+code reports it.
+
+## The experiment: 25 epochs with no loss at all
+
+If SCL earns the +0.088, then removing it while keeping everything else must lose it. So we replaced
+the loss with a constant zero:
+
+```python
+if variant == 'zero':
+    return (similarity_matrix * 0).mean()
+```
+
+**The obvious objection is that this cannot do anything.** A zero loss has zero gradient, so
+`loss.backward()` writes zeros, `optimizer.step()` adds nothing, and after 25 epochs the prompt is
+the prompt it started with. The model never changes. Every epoch should produce an identical score,
+and the reported number should be exactly the untrained one.
+
+That objection is right about the model and wrong about the number, and the gap between those two is
+the whole finding.
+
+**What differs between epochs is not the model, it is the memory bank.** Look again at step one:
+every epoch calls `fit_with_limit_size_prompt`, which re-extracts the training features and
+subsamples them to 196 vectors with an approximate greedy coreset. That sampler is random in two
+places:
+
+```python
+def _reduce_features(self, features):
+    mapper = torch.nn.Linear(features.shape[1], self.dimension_to_project_features_to, bias=False)
+```
+
+```python
+start_points = np.random.choice(len(features), number_of_starting_points, replace=False)
+```
+
+A fresh `Linear` is built on every call, its weights drawn from torch's global generator, and the
+starting points from numpy's. Both generators advance as the run proceeds. So epoch 1 and epoch 2
+keep **different** 196 vectors out of the same unchanged features, and score the test set slightly
+differently.
+
+That is all the machinery needs. Twenty-five differently-subsampled banks give twenty-five different
+score vectors; averaging them cancels part of the sampling noise, and the best of twenty-five noisy
+readings of one test set is biased upward. Neither operation requires the model to have learned
+anything - only that the readings differ from each other.
+
+Result, three seeds, image AUROC:
 
 | | MVTec | VisA |
 |---|---|---|
 | untrained, one reading | 0.9153 | 0.7872 |
-| **zero loss, 25 epochs, reported the way this code reports** | **0.9271 +- 0.0011** | **0.8708 +- 0.0035** |
-| SCL, 25 epochs, same reporting | 0.9259 +- 0.0006 | 0.8644 +- 0.0018 |
+| **zero loss, 25 epochs, the code's protocol** | **0.9271 +- 0.0011** | **0.8708 +- 0.0035** |
+| SCL, 25 epochs, the code's protocol | 0.9259 +- 0.0006 | 0.8644 +- 0.0018 |
+| paper | 0.930 | 0.874 |
 
-On VisA the two sets of seeds do not overlap - the worst run that learned nothing beats the best run
-that learned with SCL - so training is not merely useless there, it costs 0.006. On MVTec the gap is
-0.001 with overlapping ranges, which is no difference at all. Neither benchmark shows SCL ahead.
+On VisA the two sets of seeds do not overlap: the worst run that learned nothing beats the best run
+that learned with SCL. On MVTec the difference is 0.001 with overlapping ranges, which is no
+difference. **The +0.088 the paper credits to SCL is reproduced here as +0.084 by a run that performs
+no learning at all.**
 
-The +0.088 image AUROC that Table 5 credits to SCL on VisA is +0.084 here without a single gradient
-step.
+## Why the paper's ablation cannot see this
 
-The mechanism is in how the code reports. It scores the test set after every epoch, rescales each
-epoch's scores to 0..1, averages every epoch so far, and keeps the epoch whose image AUROC on the
-test set is highest. Averaging cancels independent noise; a maximum over 25 noisy readings of one
-test set is biased upward. Both need the epochs to differ from each other. In the no-SCL row there is
-no loss, hence no training, hence 25 identical models: averaging 25 copies is the identity, and the
-maximum of 25 equal numbers is that number. Both mechanisms are off in one row of the ablation and on
-in the other.
+Table 5 compares "CPM" against "CPM + SCL". Without SCL there is no loss, so there is no training,
+so every iteration produces the same model and the same bank. Averaging twenty-five identical score
+vectors is the identity; the maximum of twenty-five equal numbers is that number. Both mechanisms are
+switched off in the no-SCL row and switched on in the SCL row.
 
-So the ablation does not compare a loss against no loss. It compares one reading against the selected
-mean of 25, and SCL's role is to supply the variation that the reporting exploits. Coreset randomness
-supplies just as much.
+So the ablation does not compare a loss against no loss. It compares **one reading** against **the
+selected mean of twenty-five**. SCL's contribution to that comparison is that it makes the epochs
+differ from each other; coreset resampling makes them differ just as much, for free.
 
-A single model's own image AUROC on VisA starts at 0.787 untrained, peaks near 0.80 at epoch 2 or 3 -
-which epoch varies with the seed - and falls to 0.74 by epoch 25, still falling at 100. The loss has
-no equilibrium: `-cos` on same-segment pairs is minimised when a segment collapses to a point,
-`exp(cos)` on different-segment pairs when segments are maximally spread, and nothing anchors the
-features to where they started. Its optimum is a degenerate embedding. A defect sits inside a
-segment, so collapsing segments removes exactly the variation the nearest-neighbour score reads.
+## What is left of the method
 
-Writing the loss as the paper's Eq. 3 writes it - a plain difference of cosines, no temperature and
-no exponential - recovers 0.005 on VisA and leaves the shape unchanged: up for two or three epochs,
-down thereafter.
+If the loss contributes nothing, the prompt it trains contributes nothing either, and that is
+measurable directly. With SCL off, `reset_prompt` draws from the same seed for every concept, so
+every concept's stored prompt is bit identical:
 
-## What CPM contributes: keeping the data, and nothing else
+```
+PROMPT concept:1 vs_concept0_maxdiff:0.0 cosine:1.0
+PROMPT concept:2 vs_concept0_maxdiff:0.0 cosine:1.0
+```
 
-The first ablation row is the one worth trusting, because neither side of it trains. Replacing the
-per-concept key-prompt-knowledge memory with a single bank that each task overwrites costs 0.25 image
-AUROC on MVTec and 0.20 on VisA - but that baseline throws earlier concepts away, and nothing forces
-a memory-based method to. Against the obvious alternative that keeps them, one bank holding every
-concept's vectors at the same total memory, CPM adds nothing:
+With SCL on, after three epochs they differ by a cosine of 0.9995 - directionally the same vector.
+
+The key works: with every concept in memory it routes every test image to its own concept on both
+benchmarks, and the routed reading equals the each-concept-against-its-own-bank reading to four
+decimals. But it is not needed. One bank holding every concept's vectors, at the same total memory
+and no routing at all, scores the same or better:
 
 | untrained | per-concept banks, routed | one bank holding all concepts |
 |---|---|---|
 | MVTec | 0.9153 / 0.4255 | 0.9154 / 0.4223 |
 | VisA | 0.7872 / 0.2455 | 0.7971 / 0.2435 |
 
-Storage is equal; the shared bank searches 15x more vectors per query, and the routed one pays for
-comparing the image against 15 key banks first, so the compute is comparable too.
+So of key-prompt-knowledge: **the prompt is inert, the key is redundant, and the knowledge is a
+PatchCore coreset that is never discarded.** CPM's measured value is that last part alone - it is the
+bank the anomaly score is computed against, and keeping one per concept instead of overwriting it is
+what the +0.20 of the first ablation row buys. Forgetting is zero because nothing is shared between
+concepts, which is a property of that arrangement rather than a result.
 
-Routing itself is exact - with every concept in memory the key sends every test image to its own
-concept, and the routed reading matches the each-concept-against-its-own-bank reading to four
-decimals. It is simply not needed for the score.
+## Supporting evidence
 
-The prompt half of the memory carries nothing. With no contrastive loss the prompt is never trained
-and `reset_prompt` draws from the same seed for every concept, so the stored prompts are bit
-identical - measured, `maxdiff 0.0`, `cosine 1.0` for every concept against the first. With the loss
-on, after three epochs they differ by a cosine of 0.9995.
+**Training makes the single model worse, monotonically.** On VisA a single model scores 0.787
+untrained, peaks near 0.80 at epoch 2 or 3 - which epoch varies with the seed - and falls to 0.74 by
+epoch 25, still falling at 100.
 
-So of key-prompt-knowledge: the prompt is inert, the key works but is redundant, and the knowledge is
-a PatchCore coreset that is not discarded. Forgetting is zero because nothing is shared, which is a
-property of that arrangement rather than a result.
+**The loss has no equilibrium.** `-cos` on same-segment pairs is minimised when a segment collapses
+to a single point; `exp(cos)` on different-segment pairs when segments are maximally spread; nothing
+anchors the features to where they started. Its optimum is a degenerate embedding. A defect sits
+*inside* a segment, so collapsing segments removes the very variation the nearest-neighbour score
+reads.
 
-## The evaluation the released code never runs
+**The geometry moves exactly that way.** Measured after each epoch on VisA and averaged over the 12
+categories, the mean cosine between patches of the same SAM segment rises 0.421 -> 0.582 over 15
+epochs and to 0.86 by epoch 86, while between segments it falls 0.181 -> 0.124, both monotonically,
+and image AUROC peaks at epoch 1. Per category the correlation between the two is negative in 10 of
+12, from -0.17 to -0.58. The drift is unambiguous; its link to the quality drop is an association,
+not an isolated cause - one category loses quality without collapsing at all.
 
-That routed reading needed a change to obtain. In `run_ucad.py` the whole task-agnostic inference
-phase - route by key, retrieve that concept's prompt and knowledge, evaluate every concept once all
-of them have been learned - sits between `# Inference` and the results writing **inside a
-triple-quoted string**, and never executes. `results.csv` is written from the training loop instead,
-where each concept is evaluated immediately after it is learned, against its own bank.
+**It is not a slip in how the loss was coded.** The code exponentiates the negative pairs and divides
+by a temperature; the paper's Eq. 3 does neither. Writing Eq. 3 literally recovers 0.005 on VisA and
+leaves the shape unchanged: up for two or three epochs, down thereafter.
 
-Three things follow. The key routing, which is what makes the method task-agnostic, is not exercised
-by a run of this code. No concept is re-evaluated after later concepts are learned, so nothing in a
-run can measure forgetting, and the published FM values have no source in this code path. And every
-number the code produces knows the task identity by construction, which is the assumption the paper
-sets out to remove.
+## What this does not say
 
-`UCAD_INFERENCE=1` runs the phase. Untrained, it changes none of the averages, because routing is
-perfect - but that is now a measurement rather than something a reader had to assume.
-
-After 25 epochs the phase reads lower than `results.csv` does, and the reason is not forgetting.
-What it stores per concept is one prompt and one bank, so it scores each concept with a single
-model, where `results.csv` reports the average of 25 epochs. Read that way - task-agnostic, single
-model, after the whole sequence has been learned - the method scores 0.9189 / 0.4248 on MVTec and
-0.7801 / 0.2337 on VisA, against 0.9153 / 0.4255 and 0.7872 / 0.2455 for the same thing untrained.
-That is the most honest number this code can produce, and training moves it by +0.004 and -0.007.
-
-## Smaller things
-
-**The label map is resized bilinearly.** `cv2.resize` without an interpolation argument averages the
-SAM segment ids the map holds, and the loss compares those ids with `==`, so cells on segment
-boundaries match nothing. Sampling them instead is worth +0.008 image AUROC over 25 epochs on five
-MVTec categories.
-
-**The prompt in the paper is not the prompt in the code.** The paper adds a prompt to each layer's
-input, `k^i = f^i(k^{i-1} + p^i)`, and accounts for it as (15, 7, 768) floats, which the stated
-23.28MB total confirms. The code does prefix tuning on twelve layers with separate keys and values,
-24x768 per task, inherited with the rest of the prompt machinery from DualPrompt - `args_dict.npy`
-still carries `dataset='Split-CIFAR100'` from that codebase.
-
-**Two numbers in the paper disagree.** The text gives a learning rate of 0.0005, the appendix table
-gives 0.00005 for this method. The code uses 0.0005, with `sched='constant'`, so no schedule runs.
-
-**The backbone flags in the README command do nothing.** `-b wideresnet50 -le layer2 -le layer3` is
-carried over from PatchCore's script; `PatchCore.load` builds a ViT unconditionally.
-
-**Three sizes were hardcoded**: the SAM label map at 14x14, the anomaly map at 224x224, and a k-means
-prototype reshape at `196*4*768` that is dead on the path the code takes and would break for any
-batch size that is not a multiple of four.
-
-**The block and the bank were both explored by the paper** (Tables 7 and 6) and both matter more than
-the loss. Block 7 or 9 is worth up to +0.02 over block 5 at no cost; the paper kept 5 "for
-simplicity". A bank of 784 is worth +0.07 on VisA untrained - at four times the memory, which is the
-one thing the method is trying to economise.
+It does not say the published numbers are wrong: they reproduce closely, including both ablation
+tables - see `REPRODUCTION.md`. It does not say SCL is harmful in general, only that on these two
+benchmarks in this configuration it costs 0.006 image AUROC on VisA and nothing on MVTec, while the
+protocol it is measured under credits it with 0.088. And it does not establish the mechanism of the
+damage beyond the association described above.
