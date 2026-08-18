@@ -216,6 +216,45 @@ identical and the reported score is equal or better, that is four independent wa
 prompt's per-concept content - never training it, zeroing it, deleting it, zeroing the loss - and none
 of them costs anything. Whatever carries the method's detection quality, it is not the prompt.
 
+### The same thing in the reference, on both benchmarks and under both protocols
+
+`UCAD_NO_PROMPT` does it in the authors' own code: the scoring backbone is built without e-prompt, so
+the prefix tokens are gone from all twelve blocks and it is the same frozen ViT the key comes from.
+Nothing is trained. Two readings of that model, in the configuration this repository reproduces the
+paper with - ImageNet-21k weights, block 5, bank 196, 224px, VisA on the official 1cls split:
+
+| | MVTec | VisA 1cls |
+|---|---|---|
+| honest: one bank, mean over 25 seeds | 0.9071 | 0.7810 |
+| honest: one bank, **max** over 25 seeds, per category | 0.9356 | 0.8456 |
+| **reported protocol, no prompt** (3 seeds) | **0.9295 +- 0.0013** | **0.8706 +- 0.0013** |
+| reported protocol, 25 epochs of SCL | 0.9259 | 0.8644 |
+| **paper** | **0.930** | **0.874** |
+
+Pixel AUPR follows: 0.4548 with no prompt on MVTec against 0.456 published and 0.4512 with SCL.
+
+And on the other candidate for "closest to the paper" - the ImageNet-1k fine-tune on the per-category
+folder copy, the pairing that matches the published VisA *average* while missing every category:
+
+| | MVTec | VisA (folder copy) |
+|---|---|---|
+| honest, mean over 5 seeds | 0.9170 +- 0.0060 | 0.7933 +- 0.0172 |
+| **reported protocol, no prompt** | **0.9412 +- 0.0011** | **0.8762 +- 0.0071** |
+| reported protocol, 25 epochs of SCL | 0.9435 | 0.8725 +- 0.0046 |
+| paper | 0.930 | 0.874 |
+
+Four cells out of four reproduce the published figures with the prompt deleted, and three of the four
+land above the fully trained model. The conclusion does not depend on which configuration you accept
+as the paper's.
+
+The middle row of the first table is the cleanest statement of where the published numbers come from.
+Twenty-five seeds of the honest configuration - one bank each, no prompt, no gradient - and taking the
+best per category, exactly the selection the reported protocol performs, already gives 0.9356 on
+MVTec, **above** the published 0.930. Per-category spread across those seeds is what drives it: screw
+0.522-0.744, pcb4 0.496-0.845, candle 0.517-0.724, pcb1 0.695-0.883, all from one frozen model whose
+only moving part is which 196 vectors the coreset happened to draw. An epoch of this method is a
+re-roll, and the protocol reports the best of twenty-five.
+
 ## The SAM label map
 
 `cv2.resize` without an interpolation argument averages the segment ids the map holds, and the loss
