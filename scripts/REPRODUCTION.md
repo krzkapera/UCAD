@@ -87,8 +87,12 @@ AUROC is highest. `FINDINGS.md` sets that out with the code. To read a single mo
 |---|---|---|
 | MVTec, image AUROC | 0.930 | 0.9259 +- 0.0006 (3 seeds) |
 | MVTec, pixel AUPR | 0.456 | 0.4512 (3 seeds) |
-| VisA, image AUROC | 0.874 | 0.8638 |
-| VisA, pixel AUPR | 0.300 | 0.2982 |
+| VisA, image AUROC | 0.874 | 0.8638 and 0.8668 in two runs |
+| VisA, pixel AUPR | 0.300 | 0.2982 and 0.2999 |
+
+The two VisA runs are the same configuration and seed; one was resumed from per-concept checkpoints
+after hitting a wall-time limit, which puts the random number generator in a different state, so they
+are effectively two samples. The per-category table below is the first of them.
 
 ### MVTec AD, per category, three seeds
 
@@ -192,6 +196,8 @@ finishes. It costs O(T^2) test passes on top of training.
 | MVTec, 25 epochs | 15 | 0 | 0.000000 | 0.000000 | 0.010 |
 | VisA, 0 epochs | 12 | 0 | 0.000000 | 0.000000 | - |
 | VisA, 25 epochs | 12 | 0 | 0.000000 | 0.000000 | 0.039 |
+
+All four are complete runs over every concept of the benchmark.
 
 Not approximately zero - exactly. Every earlier concept repeats its just-learned AUROC bit for bit as
 later concepts join the memory:
