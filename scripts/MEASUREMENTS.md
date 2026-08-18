@@ -155,23 +155,34 @@ but `PatchCore.load` spells the parameter without the "r":
 ```
 
 and its signature ends in `**kwargs`, so the misspelled argument is swallowed and the scorer is always
-built with **one** neighbour whatever the flag says. Measured: `--anomaly_scorer_num_nn 5` gives
-0.9153 / 0.4255 on MVTec and 0.7872 / 0.2455 on VisA, bit for bit what `1` gives. The README's
+built with **one** neighbour whatever the flag says. Measured with the checkpoint the paper states,
+`--anomaly_scorer_num_nn 5` against the `1` the README passes:
+
+| | 5, untrained | 1, untrained | 5, 25 epochs | 1, 25 epochs |
+|---|---|---|---|---|
+| MVTec | 0.9153 / 0.4255 | 0.9153 / 0.4255 | 0.9254 / 0.4558 | 0.9254 / 0.4558 |
+| VisA | 0.7872 / 0.2455 | 0.7872 / 0.2455 | 0.8668 / 0.2999 | 0.8668 / 0.2999 |
+
+Bit for bit identical in all four columns, trained and untrained. The README's
 `--anomaly_scorer_num_nn 1` is a no-op that happens to match the default, and Eq. 5-6 cannot be
 switched on from the command line at all.
 
 **Patch neighbourhood: the flag the README overrides is load-bearing.** `--patchsize` sets the
 neighbourhood of patch features pooled into one descriptor. `PatchCore.load` defaults it to 3, PatchCore's
-own value; the README passes 1. Untrained, with the checkpoint the paper states:
+own value; the README passes 1. With the checkpoint the paper states:
 
 | | patchsize 1 (README) | patchsize 3 (default) |
 |---|---|---|
-| MVTec | 0.9153 / 0.4255 | 0.6011 / 0.2196 |
-| VisA | 0.7872 / 0.2455 | 0.5254 / 0.0454 |
+| MVTec, untrained | 0.9153 / 0.4255 | 0.6011 / 0.2196 |
+| MVTec, 25 epochs | 0.9254 / 0.4558 | 0.6530 / 0.3407 |
+| VisA, untrained | 0.7872 / 0.2455 | 0.5254 / 0.0454 |
+| VisA, 25 epochs | 0.8668 / 0.2999 | 0.6144 / 0.0922 |
 
-A 0.31 and 0.26 drop. Pooling a 3x3 neighbourhood of a 14x14 grid mixes a third of the image into every
-descriptor, which is fatal for nearest-neighbour scoring. Omit `--patchsize 1` and the method collapses
-to little better than chance on VisA - and neither the paper nor the code comments say so.
+A 0.31 and 0.26 drop untrained, and 0.27 and 0.25 after 25 epochs under the full reporting protocol -
+so neither training nor the epoch ensemble recovers it. Pooling a 3x3 neighbourhood of a 14x14 grid
+mixes a third of the image into every descriptor, which is fatal for nearest-neighbour scoring. Omit
+`--patchsize 1` and the method collapses to little better than chance on VisA - and neither the paper
+nor the code comments say so.
 
 ## The SAM label map
 
