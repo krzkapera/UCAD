@@ -44,7 +44,7 @@ process's address space.
 | backbone weights | ViT-B/16 **ImageNet-21k**, no ImageNet-1k fine-tune | `default_cfgs` has the augreg line commented out and `imagenet21k/ViT-B_16.npz` in its place. timm's modern default for the same model name is an ImageNet-1k fine-tune, which scores up to 0.07 higher on VisA. The paper says 21k. |
 | VisA split | official `1cls.csv` | see above, worth 0.06 |
 | feature block | 5 of 12 | hardcoded in `forward_features`; the paper's Table 7 sweeps it and keeps 5 "for simplicity" |
-| bank per concept | 196 | `--memory_size 196`; the code also computes a 1960-vector reading into `results_nolimit/` that the paper never mentions |
+| bank per concept | 196 | `--memory_size 196`; the code also computes a 1960-vector reading into `results_nolimit/`, and its distance from this one turns out to be the published FM - see `MEASUREMENTS.md` |
 | patch neighbourhood | `--patchsize 1` | the CLI default is 3 and it is not harmless: leaving it out costs 0.27 image AUROC on MVTec and 0.25 on VisA at these settings, and neither training nor the epoch ensemble recovers it |
 | scorer neighbours | `--anomaly_scorer_num_nn 1` | inert - `PatchCore.load` spells the parameter `anomaly_score_num_nn` and absorbs the other into `**kwargs`, so the scorer always uses 1 |
 | input | 224, resize then centre crop | |

@@ -99,10 +99,12 @@ that combination with `orig_in21k`) but not the VisA one (0.8122 at block 7, fol
 On the official split with the checkpoint the paper states, the same point holds at 196: untrained
 0.7872 against 0.874 published, so VisA needs the extra memory to overtake it, while MVTec does not.
 
-**The 1960-vector reading is computed in every run and never reported.** `--basic_size` defaults to
-1960 and its results go to `results_nolimit/`. On VisA an untrained model with that bank scores 0.8867
-- above the 0.874 the paper reports for the trained one, on the same split, in a file the code has
-always written.
+**The 1960-vector reading is computed in every run and never reported as detection quality.**
+`--basic_size` defaults to 1960 and its results go to `results_nolimit/`. On VisA an untrained model
+with that bank scores 0.8867 - above the 0.874 the paper reports for the trained one, on the same
+split, in a file the code has always written. It does reach the paper indirectly: its distance from
+the 196-vector reading is what the README calls FM, and it matches the published Forgetting Measure.
+See below.
 
 None of this is free: 784 is four times the memory the method advertises and 1960 is ten times, and
 fixed small memory is the method's selling point. The honest way to read it is that the published
@@ -183,6 +185,38 @@ so neither training nor the epoch ensemble recovers it. Pooling a 3x3 neighbourh
 mixes a third of the image into every descriptor, which is fatal for nearest-neighbour scoring. Omit
 `--patchsize 1` and the method collapses to little better than chance on VisA - and neither the paper
 nor the code comments say so.
+
+**The published Forgetting Measure is a bank-size difference.** The README says so, in the paragraph
+that explains why the inference phase is commented out:
+
+> The inference involving a query process, it's slow, and I've commented it out in the code
+> (./run_ucad.py lines 408-509). Training will directly provide the final results, and the inference
+> process merely repeats this step. The final output will consist of two parts, with the lower
+> metrics representing the final results, and the difference between them and the higher metrics
+> results is denoted as FM.
+
+The two parts are the two result directories every run writes: `results/` for the `--memory_size`
+bank and `results_nolimit/` for the `--basic_size` one, which defaults to 1960. Measured in the
+configuration this repository reproduces the paper with, 25 epochs of SCL:
+
+| | bank 196 | bank 1960 | difference | published FM |
+|---|---|---|---|---|
+| MVTec | 0.9254 | 0.9354 | **0.0100** | **0.010** |
+| VisA 1cls | 0.8668 | 0.9140 | **0.0472** | **0.039** |
+
+MVTec is exact. VisA agrees at both ends: the paper implies a 1960-vector reading of 0.874 + 0.039 =
+0.913 and we measure 0.9140, the same distance out as our 0.8668 against its 0.874.
+
+So the quantity Table 3 reports as forgetting is the gain from a tenfold larger memory, measured on
+one model against one test set. No earlier concept is re-scored anywhere in it, and Eq. 7 is not
+evaluated. That resolves what was an open question here: the forgetting this architecture actually
+exhibits, by the paper's own definition, is exactly 0, because nothing is shared between concepts and
+routing is correct on every test image of both benchmarks.
+
+Neither the paper nor the code says which of the two readings the tables carry. The `results/` one
+matches, so the published detection figures are the 196-vector bank; the 1960-vector reading is
+computed in every run and never reported as detection quality, only - if the README is taken at its
+word - as the difference that becomes FM.
 
 ## Removing the prompt, and how it is initialised
 
@@ -272,7 +306,8 @@ implementation earlier: no systematic effect on whether training helps.
 Recorded because the reasoning that produced them is worth not repeating.
 
 **"The bank size was never explored."** False - Table 6 is exactly that ablation. The correct claim is
-narrower: the 1960-vector reading is computed and not reported.
+narrower: the 1960-vector reading is computed and not reported as a detection figure, though its
+distance from the 196-vector one is what the published FM turns out to be.
 
 **"Nothing in the paper argues for block 5."** False - Table 7 sweeps blocks 1, 3, 5, 7, 9 and the
 paper says it kept 5 "for simplicity". Our own reproduction of that table shows the best block beats 5
@@ -294,9 +329,6 @@ reaches 0.7039 against 0.739 published.
 
 Things we can state but not explain:
 
-- Where the published Forgetting Measure of 0.010 (MVTec) and 0.039 (VisA) comes from. This
-  architecture shares nothing between concepts and routes every test image correctly, so the matrix
-  Eq. 7 is defined over is constant along its rows and the measure is exactly 0.
 - Why block 1 misses by +0.080 on MVTec in Table 7 when blocks 3 to 9 land within 0.005.
 - Why the MVTec no-SCL cell at bank 196 misses by +0.021 when the 392 and 784 cells land within 0.002.
 - Why pcb4 (-0.066), pcb3 (-0.042) and screw (-0.035) deviate when the other categories agree to 0.01.
