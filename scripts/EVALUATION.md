@@ -61,18 +61,51 @@ The two mechanisms are easy to confuse because they are layered. Per concept, pe
 4. if it is the best such AUROC so far, stores this epoch's prompt and bank and records the number.
 
 So the reported figure is the **maximum over epochs of the AUROC of the cumulative mean**. A maximum of
-means. The averaging smooths, the maximum then picks the luckiest point of the smoothed sequence, and
-because both operate on the same 25 readings, the two effects compound.
+means.
+
+The two steps do opposite things to the same variance, and it is worth keeping them apart. **Averaging
+removes noise** from the score estimate: if each epoch's scores are signal plus roughly independent
+sampling noise, the mean of 25 of them is a better estimate than any one. **The maximum harvests
+whatever noise is left** in the sequence of running means, which is biased upward by an amount that
+grows with their spread.
+
+One measurement settles which of the two is doing the work, and it is not the one we assumed at first.
+On VisA, in the same runs:
+
+| reading of the same trained model | seed 1 | seed 2 |
+|---|---|---|
+| last epoch | 0.7420 | 0.7314 |
+| best single epoch, one epoch for all categories | 0.8038 | 0.7908 |
+| best single epoch **chosen per category with the test labels** | 0.8397 | 0.8318 |
+| what the code reports - mean of 25 epochs, best cumulative mean | **0.8664** | **0.8629** |
+
+The reported number is above the per-category oracle. No single epoch reaches it - not the luckiest one,
+not even letting every category pick its own luckiest epoch using the very labels the result is scored
+on. So the ensemble is not selecting an extreme; it is genuinely estimating better than any of its
+members, which is what averaging independent errors does. The upward bias from the selection sits on top
+of that and is the smaller of the two: +0.0436 against +0.129.
+
+This matters for how the finding should be stated. "The protocol turns noise into a number" is right
+about the epoch selection and wrong about the averaging - averaging cancels noise rather than exploiting
+it. What makes the averaging indefensible is not that it cheats, but that it is a different and more
+expensive method than the one the paper describes, reported as if it were the same one.
 
 One consequence is worth stating on its own: what a run *stores* is a single epoch's prompt and bank -
 the epoch at which the running mean peaked - while what it *reports* is the mean of 25 epochs. The
 artefact cannot reproduce the number. We measured the gap: replaying the stored state through the
 routing phase gives 0.7801 on VisA against the 0.8638 the same run reports.
 
+
 ## Why the protocol looks like this
 
-The averaging is not a design decision about epochs. It is PatchCore's ensemble code with an epoch loop
-wrapped around it, and the file shows this directly. In the (commented-out) inference phase the
+PatchCore's ensemble is over **feature extractors**, not epochs: its script accepts `-b` several times,
+builds one PatchCore per backbone with its own memory bank, scores the test set with each, and averages
+their min-max rescaled scores. Different networks give genuinely different opinions, and the rescaling
+is there because they score on different scales.
+
+UCAD passes `-b` once, so `PatchCore_list` has length one and that averaging is a no-op. The averaging
+that ends up mattering is not a design decision about epochs at all - it is that same ensemble code with
+an epoch loop wrapped around it, and the file shows this directly. In the (commented-out) inference phase the
 identical block reads:
 
 ```python
