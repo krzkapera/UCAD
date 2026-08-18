@@ -68,7 +68,8 @@ python3 scripts/launch.py --gpu 0 --seed 0 --memory_size 196 --epochs_num 25 \
 reads the VisA tree too. `scripts/run_benchmark.sbatch` wraps this for Slurm.
 
 Results land in `results/UCAD/FULL/results.csv` (the 196-vector bank, this is the reported one) and
-`results_nolimit/UCAD/FULL/results.csv` (1960 vectors). Take the last `Mean` row.
+`results_nolimit/UCAD/FULL/results.csv` (1960 vectors). Each file holds one row per category and a
+single `Mean` row; that row is the benchmark average.
 
 **A run takes** 1.5-1.9 h for MVTec and 2.5-3.0 h for VisA at 25 epochs on one GPU, and 9-11 minutes
 at `--epochs_num 0`. `UCAD_CKPT_DIR` saves each finished concept so a job that runs out of wall time can

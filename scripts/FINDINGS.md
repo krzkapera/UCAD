@@ -38,7 +38,8 @@ The paper's Metrics section says only this:
 A reader takes that to mean: train the model, then measure it. The code does something else, in three
 steps.
 
-**One: it evaluates the test set after every epoch and keeps every result.**
+**One: it evaluates the test set after every epoch and keeps every result.** Condensed from
+`run_ucad.py` lines 160-191 - the interleaved second evaluation at `basic_size` is left out:
 
 ```python
 for epoch in range(epochs):
@@ -46,7 +47,9 @@ for epoch in range(epochs):
     PatchCore.prompt_model.eval()
     memory_feature = PatchCore.fit_with_limit_size_prompt(dataloaders["training"], memory_size)
     PatchCore.anomaly_scorer.fit(detection_features=[memory_feature])
-    scores, segmentations, labels_gt, masks_gt = PatchCore.predict_prompt(dataloaders["testing"])
+    scores, segmentations, labels_gt, masks_gt = PatchCore.predict_prompt(
+        dataloaders["testing"]
+    )
     aggregator["scores"].append(scores)
 ```
 
@@ -64,7 +67,7 @@ scores = np.mean(scores, axis=0)
 **Three: of those twenty-five running averages it keeps the one that scores best on the test set.**
 
 ```python
-if (auroc > pr_auroc):
+if(auroc>pr_auroc):
     memory_feature_list[dataloader_count] = memory_feature
     prompt_list[dataloader_count] = PatchCore.prompt_model.get_cur_prompt()
 ```
@@ -74,7 +77,7 @@ up in memory, and the number that ends up in the results file, are chosen by loo
 the data the result is then reported on. A fourth line stops a category the moment it is perfect:
 
 ```python
-if (auroc == 1):
+if(auroc==1):
     break
 ```
 
@@ -109,23 +112,35 @@ That objection is right about the model and wrong about the number, and the gap 
 the whole finding.
 
 **What differs between epochs is not the model, it is the memory bank.** Look again at step one:
-every epoch calls `fit_with_limit_size_prompt`, which re-extracts the training features and
-subsamples them to 196 vectors with an approximate greedy coreset. That sampler is random in two
-places:
+every epoch calls `fit_with_limit_size_prompt`, which re-extracts the training features and hands them
+to the sampler,
 
 ```python
-def _reduce_features(self, features):
-    mapper = torch.nn.Linear(features.shape[1], self.dimension_to_project_features_to, bias=False)
+features = self.featuresampler.run_with_limit_memory(features, limit_size)
+```
+
+which reduces them and then picks 196 of them greedily. It is random in two places:
+
+```python
+    def _reduce_features(self, features):
+        if features.shape[1] == self.dimension_to_project_features_to:
+            return features
+        mapper = torch.nn.Linear(
+            features.shape[1], self.dimension_to_project_features_to, bias=False
+        )
 ```
 
 ```python
-start_points = np.random.choice(len(features), number_of_starting_points, replace=False)
+        start_points = np.random.choice(
+            len(features), number_of_starting_points, replace=False
+        ).tolist()
 ```
 
-A fresh `Linear` is built on every call, its weights drawn from torch's global generator, and the
-starting points from numpy's. Both generators advance as the run proceeds. So epoch 1 and epoch 2
-keep **different** 196 vectors out of the same unchanged features, and score the test set slightly
-differently.
+The features are 1024-dimensional and `dimension_to_project_features_to` is 128, so the early return
+never fires: a fresh `Linear` is built on every call, its weights drawn from torch's global generator,
+and the greedy search's starting points from numpy's. Both generators advance as the run proceeds. So
+epoch 1 and epoch 2 keep **different** 196 vectors out of the same unchanged features, and score the
+test set slightly differently.
 
 That is all the machinery needs. Twenty-five differently-subsampled banks give twenty-five different
 score vectors; averaging them cancels part of the sampling noise, and the best of twenty-five noisy
