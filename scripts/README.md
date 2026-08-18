@@ -10,6 +10,7 @@ Everything needed to run this repository's experiments, kept out of the model co
 | `visa_sam_b_masks.py` | rewrites VisA SAM label maps into the 8-bit, image-named form `run_ucad.py` reads |
 | `FINDINGS.md` | how we know the contrastive loss contributes nothing, written for someone new to the project |
 | `REPRODUCTION.md` | what it takes to reproduce the paper, and the reproduced tables beside the published ones |
+| `EVALUATION.md` | the reporting protocol taken apart: what the ensemble and the epoch selection are each worth, what honest replacements give, and why forgetting is exactly zero |
 | `MEASUREMENTS.md` | everything else measured: checkpoints, grid resolution, bank size, where paper and code disagree, claims we withdrew, and what is still unexplained |
 
 ## Running a benchmark
