@@ -184,6 +184,38 @@ mixes a third of the image into every descriptor, which is fatal for nearest-nei
 `--patchsize 1` and the method collapses to little better than chance on VisA - and neither the paper
 nor the code comments say so.
 
+## Removing the prompt, and how it is initialised
+
+Three ways of destroying the thing the paper is named after, all measured in the pyCLAD
+implementation on the **per-category folder copy** of VisA with the `augreg2_in21k_ft_in1k`
+checkpoint, single model, honest evaluation - so comparable to each other and not to the tables above.
+
+**Initialisation makes no difference.** Untrained, one seed: the reference's `uniform(-1, 1)` gives
+0.7984, all-zeros gives 0.7933. A 0.005 gap against a +-0.03 spread across seeds.
+
+Worth recording how we know: the first all-zeros run came out byte-identical to the uniform one, which
+is what told us the switch was a no-op rather than the finding. 0.7933 is the re-run.
+
+**Deleting the prompt module costs nothing.** A zero-initialised prompt is not the same as no prompt:
+prefix tuning prepends key and value tokens to the attention of all twelve blocks, so a zero prompt
+still changes the softmax normalisation. Removing the tokens instead, three seeds:
+
+| | image AUROC | pixel AP |
+|---|---|---|
+| no prompt module at all | 0.8099 +- 0.0133 | 0.2967 |
+| prompt present, untrained | 0.7648 +- 0.0293 | 0.2781 |
+| prompt present, 25 epochs of SCL | 0.7155 +- 0.0038 | 0.2052 |
+
+Against the trained model the removal is worth +0.094 with disjoint ranges. Against the untrained one
+the +0.045 is **not** significant - the ranges overlap, the two came from different driver scripts, and
+the no-prompt variant draws no initialisation, which shifts the RNG stream and with it every coreset.
+The claim the data supports is that removing the prompt costs nothing, not that it helps.
+
+Together with the zero-loss control in `FINDINGS.md`, where every concept's prompt stays bit-for-bit
+identical and the reported score is equal or better, that is four independent ways of removing the
+prompt's per-concept content - never training it, zeroing it, deleting it, zeroing the loss - and none
+of them costs anything. Whatever carries the method's detection quality, it is not the prompt.
+
 ## The SAM label map
 
 `cv2.resize` without an interpolation argument averages the segment ids the map holds, and the loss
