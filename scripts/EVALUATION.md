@@ -50,6 +50,86 @@ The ensemble is not a leak - it uses no labels - but it is a different method fr
 It stores and averages 25 models' opinions, which costs 25 forward passes over the test set per
 concept and, if you wanted to deploy it, 25 banks instead of one.
 
+## Mean or maximum? Both, nested
+
+The two mechanisms are easy to confuse because they are layered. Per concept, per epoch, the code:
+
+1. scores the whole test set with this epoch's model and appends the score vector to `aggregator`;
+2. rescales **every** epoch's vector collected so far to 0..1 and averages them - a *running* mean over
+   epochs 1..k, not this epoch alone;
+3. computes the image AUROC of that running mean;
+4. if it is the best such AUROC so far, stores this epoch's prompt and bank and records the number.
+
+So the reported figure is the **maximum over epochs of the AUROC of the cumulative mean**. A maximum of
+means. The averaging smooths, the maximum then picks the luckiest point of the smoothed sequence, and
+because both operate on the same 25 readings, the two effects compound.
+
+One consequence is worth stating on its own: what a run *stores* is a single epoch's prompt and bank -
+the epoch at which the running mean peaked - while what it *reports* is the mean of 25 epochs. The
+artefact cannot reproduce the number. We measured the gap: replaying the stored state through the
+routing phase gives 0.7801 on VisA against the 0.8638 the same run reports.
+
+## Why the protocol looks like this
+
+The averaging is not a design decision about epochs. It is PatchCore's ensemble code with an epoch loop
+wrapped around it, and the file shows this directly. In the (commented-out) inference phase the
+identical block reads:
+
+```python
+            aggregator = {"scores": [], "segmentations": []}
+            for i, PatchCore in enumerate(PatchCore_list):
+                ...
+                aggregator["scores"].append(scores)
+            scores = np.array(aggregator["scores"])
+            ...
+            scores = np.mean(scores, axis=0)
+```
+
+That is the original and legitimate pattern: PatchCore supports several backbones as an ensemble, and
+this averages their min-max rescaled scores - the rescaling is there precisely because different
+backbones score on different scales. In the training phase the same three pieces appear, but the
+aggregator is initialised **before** the epoch loop while the averaging sits **inside** it:
+
+```python
+            aggregator = {"scores": [], "segmentations": []}      # before the loop
+            ...
+            for epoch in range(epochs):
+                for i, PatchCore in enumerate(PatchCore_list):
+                    ...
+                    aggregator["scores"].append(scores)
+                scores = np.array(aggregator["scores"])           # inside the loop
+```
+
+A list meant to hold one entry per ensemble member now holds one entry per epoch. And since every UCAD
+run uses a single backbone, `PatchCore_list` has length one, so the original averaging was a no-op -
+wrapping the epoch loop around it turned that no-op into a 25-member ensemble.
+
+The epoch selection has a more ordinary origin. `if(auroc>pr_auroc): ...store the state...` is the
+standard "keep the best checkpoint" idiom, which is correct and universal when the metric comes from a
+validation split. Here it comes from the test set. It is a one-line mistake about which set you monitor,
+and the `if(auroc==1): break` beside it is the same mistake applied to how long you train.
+
+## Does any of it make sense?
+
+**The averaging: as a technique yes, as a reported result no.** Averaging the predictions of checkpoints
+taken along one training run is a real method - snapshot ensembling - and it does what it did here,
+reduce variance. Two things make it indefensible as reported. It is not described, so a reader compares
+it against baselines that report one model. And the paper's own memory accounting - 23.28MB for one key,
+one prompt and one knowledge bank per concept - is the accounting for a single model, while the number
+beside it needs 25 banks to reproduce.
+
+**The selection: no.** Choosing anything with the labels of the set you report on inflates the result by
+an amount that grows with how noisy the readings are, which is why it is worth more here (+0.04) than it
+would be for a stable method. The metric it does not optimise moves the other way, which is the usual
+symptom.
+
+**The early break: it saves compute and costs credibility.** Stopping when test AUROC hits exactly 1.0
+means the amount of training is also chosen from test labels.
+
+The honest version of this protocol is not complicated: keep the ensemble if you want it, describe it,
+count its memory, and choose the stopping point on a validation split. We measured what that costs -
+see the table above - and the answer is most of the published margin.
+
 ## Replacing the leak with something defensible
 
 If the epoch has to be chosen, choose it on data the result is not reported on. We measured that, and
