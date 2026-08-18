@@ -332,7 +332,9 @@ Things we can state but not explain:
 - Why block 1 misses by +0.080 on MVTec in Table 7 when blocks 3 to 9 land within 0.005.
 - Why the MVTec no-SCL cell at bank 196 misses by +0.021 when the 392 and 784 cells land within 0.002.
 - Why pcb4 (-0.066), pcb3 (-0.042) and screw (-0.035) deviate when the other categories agree to 0.01.
-- Whether the authors ran a version with the inference phase uncommented.
+- Whether the authors ran a version with the inference phase uncommented. The published figures match
+  the training loop's csv, not the inference phase's printed numbers, which are 0.087 lower on VisA -
+  see `REPRODUCTION.md`.
 - What the `train()` method and `get_normal_prototypes_seg` are for. They build k-means prototypes
   over groups of four images, are not on the path `run_ucad.py` takes, would break for a batch size
   that is not a multiple of four, and the paper does not describe them. `prototype_size=5` is passed

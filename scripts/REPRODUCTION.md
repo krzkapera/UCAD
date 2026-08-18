@@ -224,7 +224,29 @@ image by its key, retrieves that concept's prompt and knowledge, and evaluates e
 of them are learned sits inside a triple-quoted string between `# Inference` and the results writing.
 `results.csv` comes from the training loop instead: each concept evaluated immediately after it is
 learned, against its own bank, with its identity known by construction. `UCAD_INFERENCE=1` runs the
-phase. Untrained it changes nothing, because the routing is exact.
+phase.
+
+It also never writes anything. The phase only `print`s its numbers; it does not touch
+`result_collect`, so `compute_and_store_final_results` stores the training loop's figures whether or
+not it ran. Reading them off the log, in the configuration this file reproduces the paper with:
+
+| | training loop (csv) | inference phase (printed) |
+|---|---|---|
+| MVTec, untrained | 0.9153 | 0.9153 |
+| MVTec, 25 epochs | 0.9254 | **0.9189** |
+| VisA 1cls, untrained | 0.7872 | 0.7872 |
+| VisA 1cls, 25 epochs | 0.8668 | **0.7801** |
+
+Untrained the two agree exactly - one bank, nothing to average, and the routing is exact. Trained they
+do not, and on VisA the gap is 0.087. It is not the routing: that is correct on every test image of
+both benchmarks. It is that the training loop reports the epoch ensemble while the inference phase
+scores once with the single stored bank. The path that actually deploys the method - a test set
+arrives, its concept is recovered from the keys, that concept's prompt and bank score it - is the
+honest reading, it is in the released code, and it is the one commented out. The README's "the
+inference process merely repeats this step" holds only at zero epochs.
+
+Its print statement also carries `full_pixel_auroc`, `img_ap` and `pixel_pro` from variables the
+training loop left behind; only `auroc` and `pixel_ap` are recomputed there.
 
 **Three sizes are hardcoded** and will break any change of resolution: the SAM label map at 14x14 in
 `forward_head`, the anomaly map at 224x224 in `run_ucad.py`, and a k-means prototype reshape at
