@@ -104,6 +104,16 @@ contrastive loss the prompt is never trained and `reset_prompt` draws from the s
 so they should be identical - which would mean the prompt half of the key-prompt-knowledge memory
 carries no task-specific information at all.
 
+`UCAD_LOG_FM=1` prints the matrix the Forgetting Measure is defined over: after each concept is
+learned, every concept so far is routed and scored again.
+
+```
+FM_MATRIX learned:4 eval:2 routed:2 auroc:0.9421
+```
+
+Eq. 7 needs that matrix and the released code never produces it, because no concept is revisited
+after it is learned. Costs O(T^2) test passes on top of training, so give the job more wall time.
+
 `UCAD_SAM_INTERP=nearest` samples the SAM label map when resizing it to the feature grid instead of
 averaging it. The map holds segment ids and the loss compares them for equality, so bilinear - which
 is `cv2.resize`'s default and therefore what runs otherwise - leaves cells on segment boundaries

@@ -121,6 +121,7 @@ def run(
     _run_inference = bool(os.environ.get("UCAD_INFERENCE"))
     _union_bank = bool(os.environ.get("UCAD_UNION_BANK"))
     _log_prompts = bool(os.environ.get("UCAD_LOG_PROMPTS"))
+    _log_fm = bool(os.environ.get("UCAD_LOG_FM"))
     _pending_prompt_state = None
     if _ckpt_dir:
         os.makedirs(_ckpt_dir, exist_ok=True)
@@ -494,6 +495,28 @@ def run(
                         else ""
                     )
                     PatchCore.save_to_path(patchcore_save_path, prepend)
+
+        if _log_fm:
+            # The matrix the Forgetting Measure is defined over: after learning concept k, route and
+            # score every concept learned so far. The released code never revisits a concept, so this
+            # is the only place a forgetting number can come from.
+            for eval_id in range(dataloader_count + 1):
+                _eval_testing = list_of_dataloaders[eval_id]["testing"]
+                _sums = []
+                for key_count in range(dataloader_count + 1):
+                    PatchCore_list[0].anomaly_scorer.fit(detection_features=[key_feature_list[key_count]])
+                    _qs, _, _, _ = PatchCore_list[0].predict(_eval_testing)
+                    _sums.append(np.sum(_qs))
+                _routed = int(np.argmin(_sums))
+                PatchCore_list[0].set_dataloadercount(_routed)
+                PatchCore_list[0].prompt_model.set_cur_prompt(prompt_list[_routed])
+                PatchCore_list[0].prompt_model.eval()
+                PatchCore_list[0].anomaly_scorer.fit(detection_features=[memory_feature_list[_routed]])
+                _scores, _, _, _ = PatchCore_list[0].predict_prompt(_eval_testing)
+                _labels = [x[1] != "good" for x in _eval_testing.dataset.data_to_iterate]
+                _auroc = patchcore.metrics.compute_imagewise_retrieval_metrics(_scores, _labels)["auroc"]
+                print("FM_MATRIX learned:{} eval:{} routed:{} auroc:{}".format(
+                    dataloader_count, eval_id, _routed, _auroc))
 
         if _ckpt_dir:
             torch.save(
