@@ -185,9 +185,12 @@ PROMPT concept:2 vs_concept0_maxdiff:0.0 cosine:1.0
 
 With SCL on, after three epochs they differ by a cosine of 0.9995 - directionally the same vector.
 
-The key works: with every concept in memory it routes every test image to its own concept on both
-benchmarks, and the routed reading equals the each-concept-against-its-own-bank reading to four
-decimals. But it is not needed. One bank holding every concept's vectors, at the same total memory
+The key works, though it is asked an easier question than the paper describes. Eq. 4 routes an
+individual image; the code sums the anomaly scores of a concept's **entire test set** against each
+candidate key bank and takes the argmin, so one decision covers the whole set - fifteen decisions on
+MVTec, twelve on VisA. All of them are correct, and the routed reading equals the
+each-concept-against-its-own-bank reading to four decimals. Per-image routing, as the paper defines it,
+is also exact, but that was measured in the independent implementation rather than here. But it is not needed. One bank holding every concept's vectors, at the same total memory
 and no routing at all, scores the same or better:
 
 | untrained | per-concept banks, routed | one bank holding all concepts |

@@ -123,6 +123,23 @@ Prompt length is the one part of this we could test. Over 25 epochs on five MVTe
 0.8463. The direction matches the paper, the
 magnitude explains nothing.
 
+**Routing is done per test set, not per image.** The paper's Eq. 4 assigns an individual test image to
+a concept by comparing it against every stored key. The code instead scores a concept's whole test set
+against each key bank and picks the argmin of the sum:
+
+```python
+                    query_scores, query_seg, labels_gt_query, masks_gt_query = PatchCore.predict(
+                        dataloaders["testing"]
+                    )
+                    cur_query_list.append(np.sum(query_scores))
+```
+
+One decision per test set. That is a strictly easier problem than the per-image one - errors on
+individual images cancel in the sum - and it needs the test images to arrive grouped by concept, which
+is the assumption the method sets out to remove. Both versions turn out to be exact on these
+benchmarks, but only the per-image version is what the paper claims, and it is the independent
+implementation that measures it.
+
 **Re-weighting is unreachable, because the flag that would enable it is dropped.** The paper's Eq. 5-6
 re-weight the nearest-neighbour distance by its neighbours, which needs more than one neighbour.
 `run_ucad.py` offers `--anomaly_scorer_num_nn`, defaulting to 5, and passes it on:

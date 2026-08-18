@@ -247,8 +247,13 @@ FM_MATRIX learned:2 eval:1 routed:1 auroc:0.715704647676162
 
 Exactly zero, not approximately. It follows from the architecture: nothing is shared between concepts,
 so the only thing that could move an earlier concept's score is the key routing elsewhere, and it never
-does - `routed` equals `eval` on all 1725 MVTec and 2162 VisA test images. The same holds in the
-independent implementation, which reports 0.0000 and 100% routing on both benchmarks.
+does - `routed` equals `eval` in every cell of the matrix.
+
+Note what that does and does not measure. This code routes a whole test set at once: it scores the
+concept's entire test set against each candidate key bank, sums, and takes the argmin, so the matrix
+above contains 120 routing decisions on MVTec and 78 on VisA rather than one per image. The paper's
+Eq. 4 routes an individual image, and that stricter version is also exact - 1725 of 1725 and 1440 of
+1440 - but measured in the independent implementation, which is the one that implements it.
 
 So the published 0.010 and 0.039 have no source in this code or in this design, and the honest number
 for a method with per-concept memory and exact routing is 0. That is worth stating plainly rather than
