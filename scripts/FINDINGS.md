@@ -178,6 +178,10 @@ and no routing at all, scores the same or better:
 | MVTec | 0.9153 / 0.4255 | 0.9154 / 0.4223 |
 | VisA | 0.7872 / 0.2455 | 0.7971 / 0.2435 |
 
+Stored memory is equal - fifteen banks of 196 either way. What differs is the query: the shared bank
+searches fifteen times more vectors per patch, while the routed one first compares the image against
+fifteen key banks, so the compute is comparable rather than identical.
+
 So of key-prompt-knowledge: **the prompt is inert, the key is redundant, and the knowledge is a
 PatchCore coreset that is never discarded.** CPM's measured value is that last part alone - it is the
 bank the anomaly score is computed against, and keeping one per concept instead of overwriting it is

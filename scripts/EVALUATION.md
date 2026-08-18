@@ -13,7 +13,11 @@ comparable among themselves but not directly against the rows above them.
 
 ## The two mechanisms, separately
 
-Three readings of the same trained model, VisA, twelve categories:
+Three readings of the same trained model, VisA, twelve categories. **This decomposition was measured
+before we knew which split and checkpoint the paper used, so every row of it is on the per-category
+folder copy with timm's default ImageNet-1k-fine-tuned weights** - which is also why its bottom row
+sits on the published figure. The rows are comparable to each other and not to anything on the
+official split.
 
 | reading | VisA image AUROC |
 |---|---|
@@ -26,6 +30,12 @@ The ensemble is worth **+0.129** and the epoch selection a further **+0.044**. B
 the published figure, and neither appears in the paper. The two implementations agree on the total to
 0.0002, which is the strongest evidence we have that we understand what the code does: two independent
 codebases, put through the same protocol, land on the same number.
+
+On the official split with the checkpoint the paper states, we have the two ends of the same
+decomposition but not its middle, because the code only ever reports the selected ensemble: a single
+model at its last epoch scores 0.7420 and 0.7314 over two seeds, against 0.8638 and 0.8668 for the
+selected ensemble, and 0.7872 untrained. The middle row would need the unselected ensemble, which this
+code does not write.
 
 The epoch selection is a leak - the epoch is chosen using the labels of the test set the result is then
 reported on. Two symptoms show it is fitting noise rather than finding a stopping point: the epoch it

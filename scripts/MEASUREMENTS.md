@@ -7,6 +7,12 @@ two of them contradict claims we made earlier and later withdrew.
 Numbers are image AUROC / pixel AUPR. Unless stated otherwise: reference implementation, ViT-B/16
 ImageNet-21k weights, block 5, bank 196, 224px, one seed, VisA on the official 1cls split.
 
+**Read the labels on the VisA rows.** The grid, bank-size and block sweeps below predate the discovery
+that the official split is the right one, so they were run on the per-category folder copy with the
+`augreg_in21k_ft_in1k` checkpoint. They are internally consistent and comparable to each other, and
+they are *not* comparable to the tables in `REPRODUCTION.md`, which are on the official split with the
+checkpoint the paper states. Each affected table says so.
+
 ## Which pretrained checkpoint
 
 The paper says "pretrained on ImageNet 21K" and `default_cfgs` points at
@@ -42,7 +48,7 @@ category disagrees, so check per category before concluding that a configuration
 
 The grid was hardcoded at 14x14 in the loss and in two reshapes, so this needed those to be derived
 from the model first. MVTec, five categories (screw, cable, hazelnut, grid, transistor), untrained,
-`augreg_in21k_ft_in1k`:
+`augreg_in21k_ft_in1k`. Every VisA number in this section and the next is on the **folder copy**:
 
 | grid | bank 196 | bank = tokens per image |
 |---|---|---|
@@ -57,7 +63,7 @@ give the bank room and the ordering reverses. This is why nobody would find the 
 
 At equal bank size the finer grid helps MVTec and hurts VisA. Full benchmarks, untrained, bank 784:
 
-| block | MVTec 14x14 | MVTec 28x28 | VisA 14x14 | VisA 28x28 |
+| block | MVTec 14x14 | MVTec 28x28 | VisA (folder copy) 14x14 | VisA (folder copy) 28x28 |
 |---|---|---|---|---|
 | 5 | 0.9366 | 0.9427 | 0.8516 | 0.8504 |
 | 7 | 0.9577 | **0.9639** | **0.8535** | 0.8321 |
@@ -73,7 +79,7 @@ sequence length.
 The single largest lever in the method, and the paper does sweep it (Table 6) up to 4x. Untrained,
 block 7:
 
-| bank | VisA, 14x14 | MVTec, 28x28 |
+| bank | VisA (folder copy), 14x14 | MVTec, 28x28 |
 |---|---|---|
 | 196 | 0.8122 | - |
 | 392 | 0.8198 | 0.9524 |
@@ -85,9 +91,12 @@ block 7:
 Still rising at 3136. Two consequences worth keeping:
 
 **Untrained configurations beat the published numbers**, at more memory: MVTec 0.9639 / 0.5312 at
-block 7, 28x28, bank 784 against 0.930 / 0.456 published; VisA 0.8826 at block 7, bank 3136 against
-0.874. At the paper's own budget of 196 the untrained model still beats the published MVTec figure
-(0.9395 at block 9) but not the VisA one (0.8122 at block 7).
+block 7, 28x28, bank 784 against 0.930 / 0.456 published, and on the folder copy VisA 0.8826 at
+block 7, bank 3136 against 0.874. At the paper's own budget of 196 the untrained model still beats the
+published MVTec figure (0.9395 at block 9) but not the VisA one (0.8122 at block 7, folder copy).
+
+On the official split with the checkpoint the paper states, the same point holds at 196: untrained
+0.7872 against 0.874 published, so VisA needs the extra memory to overtake it, while MVTec does not.
 
 **The 1960-vector reading is computed in every run and never reported.** `--basic_size` defaults to
 1960 and its results go to `results_nolimit/`. On VisA an untrained model with that bank scores 0.8867
