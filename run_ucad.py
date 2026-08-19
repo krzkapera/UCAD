@@ -26,23 +26,30 @@ import argparse
 
 
 def _mask_cosines(res):
-    """Mean cosine of patch pairs inside one SAM segment and across two, for one batch.
+    """Mean cosine of patch pairs inside one SAM segment and across two, and the feature norms.
 
     The loss pulls the first towards 1 and pushes the second towards -1. Nearest-neighbour scoring
     needs the first to stay below 1, because a defect sits inside a segment: once every patch of a
     segment maps to the same point, there is nothing left for the bank to be far from.
+
+    The norms come along because the loss normalises before it measures anything, so it constrains
+    directions only, while the bank is searched with a plain L2 index over unnormalised vectors.
+    Nothing ties the two together, and these two numbers say whether they come apart.
     """
     import torch
     import torch.nn.functional as F
 
-    features = F.normalize(res["seg_feat"][0].detach(), dim=2)
+    raw = res["seg_feat"][0].detach()
+    features = F.normalize(raw, dim=2)
     similarity = torch.bmm(features, features.transpose(1, 2))
     same = (res["labels"].unsqueeze(1) == res["labels"].unsqueeze(2)).float()
     off_diagonal = 1 - torch.eye(features.shape[1], device=features.device).unsqueeze(0)
 
     within = (similarity * same * off_diagonal).sum() / (same * off_diagonal).sum().clamp(min=1)
     between = (similarity * (1 - same)).sum() / (1 - same).sum().clamp(min=1)
-    return float(within), float(between)
+
+    norms = raw.reshape(-1, raw.shape[-1]).norm(dim=1)
+    return float(within), float(between), float(norms.mean()), float(norms.std())
 
 LOGGER = logging.getLogger(__name__)
 
@@ -208,7 +215,7 @@ def run(
                     # '''
                     PatchCore.prompt_model.train()
                     loss_list = [0.0]
-                    _within_list, _between_list = [], []
+                    _within_list, _between_list, _norm_list, _norm_sd_list = [], [], [], []
                     _epoch_data = dataloaders["training"] if epoch >= 0 and not _no_prompt else []
                     with tqdm.tqdm(_epoch_data, desc="training...", leave=False) as data_iterator:
                         for image in data_iterator:
@@ -222,9 +229,11 @@ def run(
                             loss = res['loss']
                             loss_list.append(loss.item())
                             if _log_geometry:
-                                _within, _between = _mask_cosines(res)
+                                _within, _between, _norm, _norm_sd = _mask_cosines(res)
                                 _within_list.append(_within)
                                 _between_list.append(_between)
+                                _norm_list.append(_norm)
+                                _norm_sd_list.append(_norm_sd)
                             optimizer.zero_grad()
                             if(loss!=0):
                                 loss.backward()
@@ -233,9 +242,10 @@ def run(
                         print("epoch:{} loss:{}".format(epoch,np.mean(loss_list)))
                         if _log_geometry and _within_list:
                             print(
-                                "GEOMETRY category:{} name:{} epoch:{} within:{} between:{}".format(
+                                "GEOMETRY category:{} name:{} epoch:{} within:{} between:{} norm:{} norm_sd:{}".format(
                                     dataloader_count, dataloaders["training"].name, epoch,
                                     np.mean(_within_list), np.mean(_between_list),
+                                    np.mean(_norm_list), np.mean(_norm_sd_list),
                                 )
                             )
                     if lr_scheduler and epoch >= 0:

@@ -643,6 +643,36 @@ class VisionTransformer(nn.Module):
             return ((1-mask) * cosine - mask * cosine).mean()
         if variant == 'noexp':
             return (-similarity_matrix * mask + (1-mask) * similarity_matrix).mean()
+        if variant == 'balanced':
+            # Eq. 3 sums both terms with equal weight, so their relative pull is set by how many
+            # pairs each has. With a handful of SAM segments over 196 patches that is roughly four
+            # negatives per positive, and it moves from image to image with the segment count.
+            # Normalising each term by its own pair count is what a standard contrastive loss does.
+            cosine = similarity_matrix * temperature
+            pos = (cosine * mask).sum(dim=(1, 2)) / mask.sum(dim=(1, 2)).clamp(min=1)
+            neg = (cosine * (1 - mask)).sum(dim=(1, 2)) / (1 - mask).sum(dim=(1, 2)).clamp(min=1)
+            return (neg - pos).mean()
+        if variant == 'reconpatch':
+            # ReConPatch, which the paper names as its inspiration, forms positive pairs from
+            # nearest neighbours in feature space across the training set. Eq. 3 forms them from
+            # segment identity inside one image, so no pair ever crosses an image and nothing makes
+            # the same structure agree between two of them - which is the property the shared bank
+            # needs. This adds the cross-image half: the k nearest patches in any other image of the
+            # batch count as positives alongside the same-segment patches of this one.
+            n, hw, c = features.shape
+            flat = F.normalize(features.reshape(n * hw, c), dim=1)
+            sim = torch.mm(flat, flat.t()) / temperature
+            image_of = torch.arange(n * hw, device=features.device) // hw
+            same_image = image_of.unsqueeze(0) == image_of.unsqueeze(1)
+            flat_labels = labels.reshape(-1)
+            positive = (flat_labels.unsqueeze(0) == flat_labels.unsqueeze(1)) & same_image
+            k = int(os.environ.get('UCAD_RECONPATCH_K', '5'))
+            neighbours = sim.detach().masked_fill(same_image, float('-inf')).topk(k, dim=1).indices
+            across = torch.zeros_like(positive)
+            across.scatter_(1, neighbours, True)
+            positive = (positive | across | across.t()).float()
+            cosine = sim * temperature
+            return ((1 - positive) * cosine - positive * cosine).mean()
 
         loss = (-similarity_matrix * mask + (1-mask) * similarity_matrix.exp()).mean()
 

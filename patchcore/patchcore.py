@@ -24,6 +24,18 @@ from sklearn.cluster import KMeans
 LOGGER = logging.getLogger(__name__)
 
 
+# The contrastive loss normalises before it measures anything, so it shapes directions only, while
+# the bank is a plain L2 index over these vectors. UCAD_NORMALIZE_FEATURES puts both in the same
+# geometry, which is the one change that lets the loss optimise what the score actually reads.
+_NORMALIZE_FEATURES = bool(os.environ.get("UCAD_NORMALIZE_FEATURES"))
+
+
+def _maybe_normalize(features):
+    if not _NORMALIZE_FEATURES:
+        return features
+    return F.normalize(features, dim=-1)
+
+
 
 class PatchCore(torch.nn.Module):
     def __init__(self, device):
@@ -213,6 +225,7 @@ class PatchCore(torch.nn.Module):
         # sized features, these are brought into the correct form here.
         features = self.forward_modules["preprocessing"](features)
         features = self.forward_modules["preadapt_aggregator"](features)
+        features = _maybe_normalize(features)
 
         if provide_patch_shapes:
             return _detach(features), patch_shapes
@@ -283,6 +296,7 @@ class PatchCore(torch.nn.Module):
         # sized features, these are brought into the correct form here.
         features = self.forward_modules["preprocessing"](features)
         features = self.forward_modules["preadapt_aggregator"](features)
+        features = _maybe_normalize(features)
 
         if provide_patch_shapes:
             return _detach(features), patch_shapes
