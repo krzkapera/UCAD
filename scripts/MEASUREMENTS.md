@@ -328,6 +328,40 @@ distance from the honest 0.7810 to the reported 0.8668; the averaging supplies t
 So the two benchmarks fail differently. MVTec is easy enough for the frozen backbone that picking the
 luckiest of twenty-five draws is already the published result. VisA needs the ensemble on top.
 
+### The whole protocol over seeds instead of epochs
+
+Selecting the best of N runs is only half of what the protocol does. The other half averages the
+rescaled score vectors, which cannot be recovered from an AUROC, so this needs the vectors themselves
+(`UCAD_DUMP_SCORES`). Applied over 25 seeds exactly as the code applies it over 25 epochs - rescale
+each vector, accumulate the running mean, take the best prefix - on a model with no prompt, no loss
+and no gradient:
+
+| VisA 1cls | mean of 25 AUROCs | best of 25 | AUROC of the mean vector | whole protocol | paper |
+|---|---|---|---|---|---|
+| candle | 0.6034 | 0.7239 | 0.6783 | 0.7143 | 0.778 |
+| capsules | 0.7633 | 0.8425 | 0.8878 | 0.8878 | 0.877 |
+| cashew | 0.8979 | 0.9450 | 0.9568 | 0.9628 | 0.960 |
+| chewinggum | 0.9243 | 0.9490 | 0.9462 | 0.9538 | 0.958 |
+| fryum | 0.8803 | 0.9164 | 0.9538 | 0.9562 | 0.945 |
+| macaroni1 | 0.7267 | 0.8008 | 0.8449 | 0.8449 | 0.823 |
+| macaroni2 | 0.5847 | 0.6616 | 0.6077 | 0.6513 | 0.667 |
+| pcb1 | 0.8094 | 0.8834 | 0.9193 | 0.9338 | 0.905 |
+| pcb2 | 0.7720 | 0.8341 | 0.8849 | 0.8859 | 0.871 |
+| pcb3 | 0.7114 | 0.7648 | 0.8054 | 0.8054 | 0.813 |
+| pcb4 | 0.7470 | 0.8452 | 0.8948 | 0.9035 | 0.901 |
+| pipe_fryum | 0.9517 | 0.9802 | 0.9800 | 0.9860 | 0.988 |
+| **average** | **0.7810** | **0.8456** | **0.8633** | **0.8738** | **0.874** |
+
+**0.8738 against 0.874.** Mean absolute deviation from the published table is 0.0155, tighter than the
+0.0172 of the full reproduction with SCL, with candle (-0.064) the only real outlier. MVTec by the same
+route: 0.9071, 0.9356, 0.9221, **0.9286** against 0.930, mean absolute deviation 0.0102.
+
+Both published averages, then, are reproduced to within 0.002 by twenty-five independent draws of a
+frozen backbone's coreset. And the two halves of the protocol trade places between the benchmarks: on
+VisA the averaging is worth more than the selection (+0.082 against +0.065 over the mean of AUROCs),
+while on MVTec the selection is worth more (+0.029 against +0.015) and the running mean actually
+dilutes the lucky draw, which is why the whole protocol lands below the plain best-of-25 there.
+
 ## The SAM label map
 
 `cv2.resize` without an interpolation argument averages the segment ids the map holds, and the loss
