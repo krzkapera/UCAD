@@ -289,6 +289,45 @@ MVTec, **above** the published 0.930. Per-category spread across those seeds is 
 only moving part is which 196 vectors the coreset happened to draw. An epoch of this method is a
 re-roll, and the protocol reports the best of twenty-five.
 
+### Best of twenty-five re-rolls, against the published tables, per category
+
+The average hides which of the two benchmarks this actually explains. Untrained, no prompt, one bank
+per seed, best of 25 per category - the same selection the reported protocol performs:
+
+| MVTec | best of 25 | paper | | VisA 1cls | best of 25 | paper |
+|---|---|---|---|---|---|---|
+| bottle | **1.0000** | **1.000** | | pipe_fryum | 0.9802 | 0.988 |
+| leather | **1.0000** | **1.000** | | chewinggum | 0.9490 | 0.958 |
+| toothbrush | **1.0000** | **1.000** | | cashew | 0.9450 | 0.960 |
+| tile | 0.9993 | 0.998 | | fryum | 0.9164 | 0.945 |
+| hazelnut | 0.9946 | 0.994 | | pcb1 | 0.8834 | 0.905 |
+| wood | 0.9939 | 0.995 | | pcb4 | 0.8452 | 0.901 |
+| metal_nut | 0.9883 | 0.988 | | capsules | 0.8425 | 0.877 |
+| carpet | 0.9703 | 0.965 | | pcb2 | 0.8341 | 0.871 |
+| zipper | 0.9493 | 0.938 | | macaroni1 | 0.8008 | 0.823 |
+| grid | 0.9432 | 0.944 | | pcb3 | 0.7648 | 0.813 |
+| transistor | 0.9050 | 0.874 | | candle | 0.7239 | 0.778 |
+| pill | 0.8942 | 0.894 | | macaroni2 | 0.6616 | 0.667 |
+| capsule | 0.8755 | 0.866 | | | | |
+| cable | 0.7766 | 0.751 | | | | |
+| screw | 0.7444 | 0.739 | | | | |
+| **average** | **0.9356** | **0.930** | | **average** | **0.8456** | **0.874** |
+
+**On MVTec the re-rolls are the whole story.** Mean absolute deviation from the published table is
+0.0062, tighter than the 0.0089 of the full reproduction with SCL, and eight of fifteen categories
+land within 0.005. The paper reports a perfect 1.000 on exactly three categories - bottle, leather,
+toothbrush - and those are exactly the three where the best of 25 untrained draws reaches 1.0000. No
+other category reaches it in either table.
+
+**On VisA they are not.** Every one of the twelve categories falls short, by 0.028 on average, mean
+absolute deviation 0.0283, with no category overshooting. That residual is the other half of the
+protocol - the averaging of the rescaled score vectors - which selecting the best of N independent
+runs does not reproduce. On VisA the coreset draw plus the selection accounts for two thirds of the
+distance from the honest 0.7810 to the reported 0.8668; the averaging supplies the rest.
+
+So the two benchmarks fail differently. MVTec is easy enough for the frozen backbone that picking the
+luckiest of twenty-five draws is already the published result. VisA needs the ensemble on top.
+
 ## The SAM label map
 
 `cv2.resize` without an interpolation argument averages the segment ids the map holds, and the loss
