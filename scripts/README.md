@@ -72,12 +72,29 @@ simply having more tokens. Pass `--resize 384 --imagesize 384` for the 384 varia
 `UCAD_PROMPT_LEN` is the number of prefix tokens per layer, 1 by default. The paper reports a prompt
 of shape (15, 7, 768) and `args_dict.npy` carries `length=5`; neither reaches the model.
 
+`UCAD_NORMALIZE_FEATURES=1` L2-normalises the features on the way into the bank and the query, which
+turns the plain L2 index into a cosine one. The loss normalises before it measures anything, so
+without this the objective shapes directions while the score reads lengths that nothing constrains.
+It is worth more than the training is, and it is the only change that makes SCL earn its place - see
+`FINDINGS.md`.
+
+`UCAD_LOSS` selects the loss form: `code` (default, the released exponential), `paper` (Eq. 3 as
+written), `noexp`, `zero` (no learning signal at all), `balanced` (each term of Eq. 3 divided by its
+own pair count) and `reconpatch` (adds the cross-image positives ReConPatch defines and Eq. 3 does
+not; k from `UCAD_RECONPATCH_K`, 5 by default).
+
+`UCAD_NO_PROMPT=1` builds the scoring backbone without e-prompt, so the prefix tokens are gone from
+all twelve blocks and it is the same frozen ViT the key comes from. There is nothing left to train, so
+the training pass is skipped and the CPM stores nothing in the prompt slot.
+
 `UCAD_LOG_GEOMETRY` prints, after every epoch, the mean cosine of patch pairs inside one SAM segment
-and across two:
+and across two, and the norms of the features that go into the bank:
 
 ```
-GEOMETRY category:0 name:visa_candle epoch:7 within:0.83 between:0.21
+GEOMETRY category:0 name:visa_candle epoch:7 within:0.83 between:0.21 norm:71.4 norm_sd:88.2
 ```
+
+The norms are there because the loss never sees them while the L2 index is dominated by them.
 
 The loss drives the first towards 1 and the second towards -1, and its optimum is the degenerate
 embedding where that is reached. Reading them beside `SINGLE_EPOCH` shows how far a run has gone

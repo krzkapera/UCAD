@@ -231,12 +231,85 @@ not an isolated cause - one category loses quality without collapsing at all.
 
 **It is not a slip in how the loss was coded.** The code exponentiates the negative pairs and divides
 by a temperature; the paper's Eq. 3 does neither. Writing Eq. 3 literally recovers 0.005 on VisA and
-leaves the shape unchanged: up for two or three epochs, down thereafter.
+leaves the shape unchanged: up for two or three epochs, down thereafter. Normalising each term of
+Eq. 3 by its own pair count, which equal-weight sums do not, changes nothing either: 0.9251 on MVTec
+and 0.8668 on VisA against 0.9259 and 0.8644 for the released form.
+
+**Nor does the loss fail at its own objective. It succeeds at it.** Followed per epoch on VisA's
+candle, within-segment cosine rises 0.5197 -> 0.6957 and between-segment falls +0.3477 -> -0.0751 over
+25 epochs, monotonically. Eq. 3 asks for exactly that and gets it.
+
+## Why it succeeds and still does not help
+
+**The objective and the score are measured in different geometries.** The loss L2-normalises before it
+measures anything, so it constrains directions only. The bank is a plain `faiss.IndexFlatL2` over
+unnormalised vectors, and `||a-b||^2 = ||a||^2 + ||b||^2 - 2||a|| ||b|| cos`. Nothing constrains the
+norms, and they are not a minor term: measured on the features that go into the bank, their standard
+deviation is 1.8x their mean on MVTec's bottle (227 against 125) and 1.5x on VisA's candle (101
+against 69). The distance the score reads is dominated by length, and length is the one thing the loss
+never sees. Over 25 epochs on candle the norm drifts 69.0 -> 97.6 while its spread falls to 53 by
+epoch 15 and rebounds to 130 - moved around freely, because nothing holds it.
+
+**Put both in the same geometry and the loss starts paying.** `UCAD_NORMALIZE_FEATURES=1`
+L2-normalises the features on the way into the bank and the query, which makes the L2 index a cosine
+index. Three seeds each, reported protocol, ImageNet-21k weights, VisA on the official split:
+
+| | untrained | SCL, 25 epochs | zero loss, 25 epochs |
+|---|---|---|---|
+| MVTec, as released | 0.9153 | 0.9259 | 0.9271 |
+| MVTec, normalised | 0.9306 +- 0.0044 | 0.9455 +- 0.0013 | 0.9466 +- 0.0001 |
+| VisA, as released | 0.7872 | 0.8644 | 0.8708 |
+| VisA, normalised | 0.8052 +- 0.0043 | **0.8944 +- 0.0018** | 0.8857 +- 0.0010 |
+
+On VisA that is the first cell in this whole analysis where SCL beats its own control with disjoint
+seed ranges: +0.0087 image AUROC (0.8926-0.8962 against 0.8847-0.8867) and +0.0246 pixel AUPR
+(0.3258 +- 0.0023 against 0.3012 +- 0.0011). On MVTec it stays neutral, which is what the geometry log
+predicts: over 25 epochs bottle moves from 0.5240 to 0.5238 within-segment and 0.1397 to 0.1328
+between, so there the loss has nothing to contribute in either geometry.
+
+The two rows together say something sharper than "SCL does not work". The normalisation alone is worth
++0.015 to +0.030, more than everything the paper's training does, and the untrained normalised model on
+MVTec already matches the published 0.930. The loss becomes useful only once the score is read in the
+geometry the loss optimises, and even then only where the loss actually moves the features.
+
+**The cross-image half of ReConPatch makes it worse, not better.** The paper names ReConPatch as its
+inspiration, but ReConPatch forms positive pairs from feature-space nearest neighbours across the
+training set while Eq. 3 forms them from segment identity inside a single image, so no pair ever leaves
+its image. Adding the missing half - the k nearest patches in other images of the batch count as
+positives too - costs 0.0123 on VisA under normalisation (0.8821 +- 0.0019 against 0.8944 +- 0.0018,
+disjoint) and changes nothing on MVTec. The intra-image restriction the paper imposes turns out to be
+the right call.
+
+## Two objections, both closed
+
+**Prompt capacity was not the constraint.** The measurements above are at `prompt_length=1`, and the
+paper's own memory accounting implies 7, so the obvious objection is that the loss never had room to
+work. It did not need room. Three seeds per cell, reported protocol:
+
+| | SCL | zero loss | difference |
+|---|---|---|---|
+| MVTec, length 1 | 0.9259 | 0.9271 | -0.0012 |
+| MVTec, length 5 | 0.9280 +- 0.0014 | 0.9264 +- 0.0019 | +0.0016 |
+| MVTec, length 7 | 0.9290 +- 0.0024 | 0.9289 +- 0.0043 | +0.0001 |
+| VisA, length 1 | 0.8644 | 0.8708 | -0.0064 |
+| VisA, length 5 | 0.8632 +- 0.0047 | 0.8676 +- 0.0037 | -0.0044 |
+| VisA, length 7 | 0.8694 +- 0.0038 | 0.8683 +- 0.0021 | +0.0011 |
+
+Every difference sits inside the seed spread, at every capacity, on both benchmarks.
+
+**Half the prompt is never trained**, which does not rescue the loss but does change what the method
+is. `e_prompt_layer_idx` inserts prefix tokens at all twelve blocks, but the loss is computed on
+`res['seg_feat']`, captured after block 5, and `res['x']` after the last block enters no objective.
+`batched_prompt` is a plain index into one `nn.Parameter` with no coupling across layers, so the
+slices for blocks 6 to 11 receive exactly zero gradient and stay at their random initialisation for
+the whole run. The trainable capacity is six layers, not twelve, and the memory the paper accounts for
+includes layers that never move.
 
 ## What this does not say
 
 It does not say the published numbers are wrong: they reproduce closely, including both ablation
-tables - see `REPRODUCTION.md`. It does not say SCL is harmful in general, only that on these two
-benchmarks in this configuration it costs 0.006 image AUROC on VisA and nothing on MVTec, while the
-protocol it is measured under credits it with 0.088. And it does not establish the mechanism of the
-damage beyond the association described above.
+tables - see `REPRODUCTION.md`. It does not say SCL is useless in general - normalise the features and
+it earns +0.009 image and +0.025 pixel on VisA, repeatably. It says that as released, on these two
+benchmarks, it costs 0.006 image AUROC on VisA and nothing on MVTec, while the protocol it is measured
+under credits it with 0.088. And it does not establish the mechanism beyond what the geometry log
+shows: the loss moves the features the way it promises, in a geometry the scorer does not read.
