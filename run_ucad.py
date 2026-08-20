@@ -130,6 +130,9 @@ def run(
     _log_prompts = bool(os.environ.get("UCAD_LOG_PROMPTS"))
     _log_fm = bool(os.environ.get("UCAD_LOG_FM"))
     _no_prompt = bool(os.environ.get("UCAD_NO_PROMPT"))
+    _dump_scores = os.environ.get("UCAD_DUMP_SCORES")
+    if _dump_scores:
+        os.makedirs(_dump_scores, exist_ok=True)
     _pending_prompt_state = None
     if _ckpt_dir:
         os.makedirs(_ckpt_dir, exist_ok=True)
@@ -267,6 +270,17 @@ def run(
                         dataloaders["testing"]
                     )
                     aggregator["scores"].append(scores)
+                    if _dump_scores:
+                        # The raw per-image score vector and its labels, one file per concept and
+                        # epoch. Averaging across runs needs these: an AUROC cannot be averaged back
+                        # into the ensemble the reported protocol builds out of the score vectors.
+                        np.savez(
+                            os.path.join(_dump_scores, "%s_ep%02d.npz" % (dataloaders["training"].name, epoch)),
+                            scores=np.asarray(scores),
+                            labels=np.asarray(
+                                [x[1] != "good" for x in dataloaders["testing"].dataset.data_to_iterate]
+                            ),
+                        )
                     if _log_epochs:
                         _labels = [x[1] != "good" for x in dataloaders["testing"].dataset.data_to_iterate]
                         _auroc = patchcore.metrics.compute_imagewise_retrieval_metrics(scores, _labels)["auroc"]
