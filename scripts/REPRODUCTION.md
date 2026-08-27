@@ -25,7 +25,16 @@ from the csv:
 ```
 
 Symlinks are fine, but make them absolute - a relative target resolves against the link's own
-directory, not your working directory.
+directory, not your working directory. `scripts/visa_official_split.py` does this, symlinking out of
+the per-category copy and carrying the SAM masks across in the same pass:
+
+```bash
+python scripts/visa_official_split.py \
+    /data/visa /data/visa-sam-b /data/visa1cls /data/visa1cls-sam-b /data/visa/split_csv/1cls.csv
+```
+
+It prints how many training images it skipped for want of a SAM mask, since masks are generated
+against the folder copy's own train split and the official one trains on a slightly different set.
 
 **SAM masks.** MVTec's are in `mvtec2d-sam-b.zip` in this repository: 224x224, 8-bit, one per training
 image, named exactly like the image (`0020.JPG`, not `.png`) because the code finds them by string
@@ -48,10 +57,15 @@ process's address space.
 | patch neighbourhood | `--patchsize 1` | the CLI default is 3 and it is not harmless: leaving it out costs 0.27 image AUROC on MVTec and 0.25 on VisA at these settings, and neither training nor the epoch ensemble recovers it |
 | scorer neighbours | `--anomaly_scorer_num_nn 1` | inert - `PatchCore.load` spells the parameter `anomaly_score_num_nn` and absorbs the other into `**kwargs`, so the scorer always uses 1 |
 | input | 224, resize then centre crop | |
-| epochs / batch / lr | 25 / 8 / 5e-4, constant schedule | the paper's text says 5e-4, its appendix table says 5e-5 |
+| prompt length | 1 prefix token per layer | hardcoded; the paper's memory accounting implies 7 and `args_dict.npy` carries 5, and neither reaches the model. It changes little either way - see `FINDINGS.md` |
+| epochs / batch / lr | 25 / 8 / 5e-4, constant schedule | the paper's text says 5e-4, its appendix table says 5e-5. `args_dict.npy` stores 0.02 and `run_ucad.py` overwrites it with 5e-4, so the text wins |
+| optimiser | adam, betas (0.9, 0.999), eps 1e-8, weight decay 0, grad clip 1.0 | all from `args_dict.npy`, none of it stated in the paper |
 
 The `-b wideresnet50 -le layer2 -le layer3` in the README command does nothing: `PatchCore.load`
 builds the ViT unconditionally.
+
+`scripts/run_benchmark.sbatch` sets all of the above, and `scripts/visa_official_split.py` builds the
+VisA tree from `1cls.csv`.
 
 ## Running it
 

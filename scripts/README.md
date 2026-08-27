@@ -7,10 +7,13 @@ Everything needed to run this repository's experiments, kept out of the model co
 |---|---|
 | `launch.py` | entry point; restores the NumPy 1.x aliases the code still uses and caps the process's address space, then runs `run_ucad.py` |
 | `run_benchmark.sbatch` | one benchmark per submission, configured through the environment |
+| `visa_official_split.py` | materialises VisA's official `1cls.csv` split as the folder tree the loader reads |
 | `visa_sam_b_masks.py` | rewrites VisA SAM label maps into the 8-bit, image-named form `run_ucad.py` reads |
-| `FINDINGS.md` | how we know the contrastive loss contributes nothing, written for someone new to the project |
+| `collect.py` | reads the `results.csv` files a set of runs wrote: one line per run, mean +- sd across seeds, or per category |
+| `seed_ensemble.py` | applies the reported protocol over seeds instead of epochs, from score vectors dumped with `UCAD_DUMP_SCORES` |
+| `FINDINGS.md` | what the contrastive loss does and does not contribute, and the one change that makes it pay, written for someone new to the project |
 | `REPRODUCTION.md` | what it takes to reproduce the paper, and the reproduced tables beside the published ones |
-| `EVALUATION.md` | the reporting protocol taken apart: what the ensemble and the epoch selection are each worth, what honest replacements give, and why forgetting is exactly zero |
+| `EVALUATION.md` | the reporting protocol taken apart: what the ensemble and the epoch selection are each worth, what honest replacements give, and what the published Forgetting Measure actually is |
 | `MEASUREMENTS.md` | everything else measured: checkpoints, grid resolution, bank size, where paper and code disagree, claims we withdrew, and what is still unexplained |
 
 ## Running a benchmark
@@ -21,10 +24,38 @@ sbatch -A <grant> -p <partition> \
   scripts/run_benchmark.sbatch
 ```
 
+Then read the results:
+
+```bash
+python scripts/collect.py runs "visa_*" mean       # one line per run
+python scripts/collect.py runs "visa_*" seeds      # mean +- sd across seeds
+python scripts/collect.py runs "visa_*" category   # per category, with the max across runs
+```
+
+`collect.py` reads `<run>/results/REFEXP/FULL/results.csv`, which is where `run_benchmark.sbatch`
+writes unless you override `UCAD_LOG_PROJECT`.
+
+## Reproducing each conclusion
+
+Every claim in the four documents comes from one of these. All of them take `--export=ALL,...` on top
+of the four variables above, and every one of them defaults to the released behaviour when unset.
+
+| to check | how |
+|---|---|
+| the published tables | the defaults, three seeds, `UCAD_VIT_WEIGHTS=orig_in21k`, VisA built by `visa_official_split.py` |
+| that the loss changes nothing as released | the same, against `UCAD_LOSS=zero` at matched seeds |
+| that the prompt can be deleted outright | `UCAD_NO_PROMPT=1` |
+| that capacity was not the constraint | `UCAD_PROMPT_LEN=5` and `=7`, each against `UCAD_LOSS=zero` |
+| that the loss and the score disagree geometrically | `UCAD_LOG_GEOMETRY=1`, then `UCAD_NORMALIZE_FEATURES=1` against its `UCAD_LOSS=zero` control |
+| where the published numbers come from | 25 seeds of `UCAD_NO_PROMPT=1 UCAD_EPOCHS=0 UCAD_EVAL_UNTRAINED=1 UCAD_DUMP_SCORES=<dir>/<dataset>_s<seed>`, then `seed_ensemble.py` |
+| what the published Forgetting Measure is | `collect.py ... mean`, which prints both banks; their distance is it |
+| that forgetting is zero by construction | `UCAD_LOG_FM=1` |
+| what the deployment path scores | `UCAD_INFERENCE=1`, read off the log - that phase prints and never writes |
+
 ## The instrumentation the model code carries
 
-Three environment variables are read inside `run_ucad.py`. With none of them set the run behaves
-exactly as the published code does.
+These are read inside `run_ucad.py`. With none of them set the run behaves exactly as the published
+code does.
 
 `UCAD_CKPT_DIR` saves each finished concept and resumes from it, so a job that runs out of wall time
 can be re-submitted and will continue from the concept it reached.
@@ -52,8 +83,8 @@ this flag against one from a run without it. To measure only the untrained model
 
 ## Varying the backbone, the grid and the loss input
 
-Four more variables exist so that the choices baked into `patchcore/` can be varied without editing
-it. All four default to what the released code does.
+These exist so that the choices baked into `patchcore/` can be varied without editing it. Every one
+of them defaults to what the released code does.
 
 `UCAD_VIT_WEIGHTS` selects which pretrained checkpoint is loaded, as a Hugging Face tag. This one
 deserves attention: `default_cfgs` in `patchcore/vision_transformer.py` has the entry for
@@ -133,6 +164,11 @@ FM_MATRIX learned:4 eval:2 routed:2 auroc:0.9421
 
 Eq. 7 needs that matrix and the released code never produces it, because no concept is revisited
 after it is learned. Costs O(T^2) test passes on top of training, so give the job more wall time.
+
+`UCAD_DUMP_SCORES=<dir>` writes one `<concept>_ep<NN>.npz` per concept and evaluation, holding that
+evaluation's raw per-image score vector and its labels. `results.csv` keeps only aggregates, and an
+AUROC cannot be averaged back into the ensemble the protocol builds out of score vectors, so pooling
+runs needs these. `seed_ensemble.py` reads them.
 
 `UCAD_SAM_INTERP=nearest` samples the SAM label map when resizing it to the feature grid instead of
 averaging it. The map holds segment ids and the loss compares them for equality, so bilinear - which

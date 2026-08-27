@@ -1,8 +1,19 @@
-# How we know the contrastive loss contributes nothing
+# What the contrastive loss is worth
 
-Written for someone who has not seen this project. It sets out what UCAD does, what its code
-reports, and the one experiment that settles what the contrastive loss is worth. Every number here
-was produced by this repository; `REPRODUCTION.md` says how to produce them.
+Written for someone who has not seen this project. It sets out what UCAD does, what its code reports,
+and what the contrastive loss actually contributes - which is nothing as the method is released, for
+a reason that turns out to be fixable in one line. Every number here was produced by this repository;
+`REPRODUCTION.md` says how to produce them.
+
+The short version, if you read no further:
+
+- As released, switching the loss off changes nothing measurable on either benchmark, at any prompt
+  length, and the published gain of +0.088 on VisA is the reporting protocol rather than the loss.
+- The loss is not broken and is not miscoded: it moves the features exactly where it says it will.
+- It does not help because it optimises cosine geometry while the bank is searched by Euclidean
+  distance over vectors whose lengths nothing constrains. Normalise the features into the bank and
+  the loss starts earning its place, +0.009 image and +0.025 pixel on VisA over disjoint seed ranges.
+- That same normalisation is worth more on its own than all of the training.
 
 ## The method in one page
 
@@ -174,7 +185,7 @@ differ from each other; coreset resampling makes them differ just as much, for f
 
 ## What is left of the method
 
-If the loss contributes nothing, the prompt it trains contributes nothing either, and that is
+If the loss changes nothing as released, the prompt it trains carries nothing either, and that is
 measurable directly. With SCL off, `reset_prompt` draws from the same seed for every concept, so
 every concept's stored prompt is bit identical:
 
@@ -279,6 +290,29 @@ its image. Adding the missing half - the k nearest patches in other images of th
 positives too - costs 0.0123 on VisA under normalisation (0.8821 +- 0.0019 against 0.8944 +- 0.0018,
 disjoint) and changes nothing on MVTec. The intra-image restriction the paper imposes turns out to be
 the right call.
+
+## Four things that are not the explanation
+
+Each of these looks like it could be the bug behind "the loss does nothing", and each was checked and
+is clean. They are recorded so nobody spends a day re-deriving them as suspicions.
+
+**The optimisation runs.** The loss falls monotonically over 25 epochs, and far: on VisA's first
+concept from 0.970 to 0.088, on another down to -1.23. Nothing is stuck or diverging.
+
+**The SAM label maps are read correctly.** `forward_head` takes channel 0 of `cv2.imread`'s output,
+which would merge distinct segments if the maps were colour-coded. The masks in `mvtec2d-sam-b.zip`
+are PNG colour type 0 - 8-bit greyscale - so `imread` replicates the one channel three times and
+channel 0 is the segment id. `scripts/visa_sam_b_masks.py` writes VisA's the same way.
+
+**The optimiser is what the paper says.** From `args_dict.npy`: adam, betas (0.9, 0.999), eps 1e-8,
+**weight decay 0.0**, clip_grad 1.0, constant schedule. The `lr` stored in that file is 0.02, but
+`run_ucad.py` overwrites it with 5e-4 before building the optimiser - the figure in the paper's text
+rather than the 5e-5 in its appendix table.
+
+**The prompt is not being reinitialised mid-run by accident.** Each concept builds a fresh
+`PatchCore`, and `fix_seeds(seed)` runs first, so every concept starts from the same random prompt.
+That is why with the loss off the stored prompts come out bit-for-bit identical across concepts: a
+property of the method, not a fault in the measurement.
 
 ## Two objections, both closed
 

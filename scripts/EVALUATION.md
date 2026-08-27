@@ -34,11 +34,33 @@ implementations agree on the total to 0.0002, which is the strongest evidence we
 understand what the code does: two independent codebases, put through the same protocol, land on the
 same number.
 
-On the official split with the checkpoint the paper states, we have the two ends of the same
-decomposition but not its middle, because the code only ever reports the selected ensemble: a single
-model at its last epoch scores 0.7420 and 0.7314 over two seeds, against 0.8638 and 0.8668 for the
-selected ensemble, and 0.7872 untrained. The middle row would need the unselected ensemble, which this
-code does not write.
+On the official split with the checkpoint the paper states, a single model at its last epoch scores
+0.7420 and 0.7314 over two seeds, against 0.8638 and 0.8668 for the selected ensemble, and 0.7872
+untrained. The middle row needs the unselected ensemble, which this code never writes - it reports
+only the selected one.
+
+That middle row is recoverable a different way, and the answer is more informative than the epoch
+version. Dump the score vectors (`UCAD_DUMP_SCORES`) from 25 seeds of an untrained, prompt-free model
+and apply the protocol across seeds instead of epochs, which isolates each mechanism against the same
+baseline instead of stacking them:
+
+| VisA 1cls, 25 draws of the coreset, no training at all | image AUROC |
+|---|---|
+| mean of the 25 separate AUROCs - the honest reading | 0.7810 |
+| best of the 25, per category - the selection alone | 0.8456 |
+| AUROC of the averaged rescaled vectors - the ensemble alone | 0.8633 |
+| both, as the code layers them | **0.8738** |
+| published | 0.874 |
+
+Two things to take from it. Measured against a common baseline the two mechanisms are **not
+additive**: +0.065 and +0.082 separately, +0.093 together, because both are cancelling the same
+noise. And the epoch decomposition higher up this page is a *sequential* one - each row applies on top
+of the row above - so its +0.129 and +0.039 do add, and the two tables are not in conflict.
+
+The same table on MVTec reads 0.9071, 0.9356, 0.9221, **0.9286** against 0.930 published, and there the
+two swap ranks: the selection is worth more than the ensemble, and the running mean dilutes the lucky
+draw enough that the whole protocol lands below the plain best-of-25. See `MEASUREMENTS.md` for the
+per-category form, which is where this stops being an average that happens to match.
 
 The epoch selection is a leak - the epoch is chosen using the labels of the test set the result is then
 reported on. Two symptoms show it is fitting noise rather than finding a stopping point, both measured
@@ -255,10 +277,29 @@ above contains 120 routing decisions on MVTec and 78 on VisA rather than one per
 Eq. 4 routes an individual image, and that stricter version is also exact - 1725 of 1725 and 1440 of
 1440 - but measured in the independent implementation, which is the one that implements it.
 
-So the published 0.010 and 0.039 have no source in this code or in this design, and the honest number
-for a method with per-concept memory and exact routing is 0. That is worth stating plainly rather than
-as a strength: zero forgetting here is a property of keeping the concepts in separate boxes, not a
-result about learning.
+So the honest Forgetting Measure for a method with per-concept memory and exact routing is 0. That is
+worth stating plainly rather than as a strength: zero forgetting here is a property of keeping the
+concepts in separate boxes, not a result about learning.
+
+**The published 0.010 and 0.039 are a different quantity, and the README says which.** In the
+paragraph explaining why the inference phase is commented out: *"The final output will consist of two
+parts, with the lower metrics representing the final results, and the difference between them and the
+higher metrics results is denoted as FM."* The two parts are the two result directories every run
+writes - `results/` for the `--memory_size` bank and `results_nolimit/` for the `--basic_size` one,
+which defaults to 1960. Their distance, 25 epochs of SCL, the configuration this repository reproduces
+the paper with:
+
+| | bank 196 | bank 1960 | difference | published FM |
+|---|---|---|---|---|
+| MVTec | 0.9254 | 0.9354 | **0.0100** | **0.010** |
+| VisA 1cls | 0.8668 | 0.9140 | **0.0472** | **0.039** |
+
+MVTec is exact; VisA agrees at both ends, since the paper implies a 1960-vector reading of
+0.874 + 0.039 = 0.913 and we measure 0.9140, the same distance out as our 0.8668 against its 0.874.
+
+So what Table 3 reports as forgetting is the gain from a tenfold larger memory, measured on one model
+against one test set. No earlier concept is re-scored anywhere in it, and Eq. 7 is never evaluated.
+`scripts/collect.py ... mean` prints both banks side by side.
 
 One caveat if you compute this with the pyCLAD library rather than the matrix above: its
 `ForgettingMeasure` averages over `range(learned_task + 1)`, so it includes the concept just learned

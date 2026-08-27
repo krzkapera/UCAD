@@ -142,6 +142,24 @@ is the assumption the method sets out to remove. Both versions turn out to be ex
 benchmarks, but only the per-image version is what the paper claims, and it is the independent
 implementation that measures it.
 
+**The prompt-key mechanism is instantiated and then dropped.** `PatchCore.load` builds the e-prompt
+with `prompt_key=True` and `prompt_key_init="uniform"`, and `args_dict.npy` carries
+`pull_constraint=True, pull_constraint_coeff=1.0`. In DualPrompt, where this machinery comes from, the
+total loss is the task loss minus that coefficient times `EPrompt.forward`'s `reduce_sim`, which pulls
+the selected prompt's key towards the image's cls feature. Here `run_ucad.py` takes only `res['loss']`,
+so `reduce_sim` is computed and discarded, and `prompt_key` is a trainable parameter that receives no
+gradient for the whole run. With `pool_size=1` and `top_k=1` the selection it would serve is degenerate
+anyway - there is only ever one prompt to pick - so nothing is lost. It is worth knowing only because
+two different things are called a key in this codebase, and the paper's `Ke` is the other one: the
+coreset of frozen features that routes a test set to a concept.
+
+**Half the prompt never moves.** `e_prompt_layer_idx=[0..11]` puts prefix tokens in all twelve blocks,
+but the loss is computed on `res['seg_feat']`, captured after block 5, and `res['x']` after the last
+block enters no objective. `batched_prompt` indexes one `nn.Parameter` with no coupling across layers,
+so the slices for blocks 6 to 11 receive exactly zero gradient and keep their random initialisation.
+The trainable capacity is six layers, not twelve, and the memory the paper accounts for includes
+layers that cannot change.
+
 **Re-weighting is unreachable, because the flag that would enable it is dropped.** The paper's Eq. 5-6
 re-weight the nearest-neighbour distance by its neighbours, which needs more than one neighbour.
 `run_ucad.py` offers `--anomaly_scorer_num_nn`, defaulting to 5, and passes it on:
