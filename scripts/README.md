@@ -11,7 +11,7 @@ Everything needed to run this repository's experiments, kept out of the model co
 | `visa_sam_b_masks.py` | rewrites VisA SAM label maps into the 8-bit, image-named form `run_ucad.py` reads |
 | `collect.py` | reads the `results.csv` files a set of runs wrote: one line per run, mean +- sd across seeds, or per category |
 | `seed_ensemble.py` | applies the reported protocol over seeds instead of epochs, from score vectors dumped with `UCAD_DUMP_SCORES` |
-| `FINDINGS.md` | what the contrastive loss does and does not contribute, and the one change that makes it pay, written for someone new to the project |
+| `FINDINGS.md` | what the contrastive loss contributes, the design defect behind it, and why repairing that defect still does not rescue it |
 | `REPRODUCTION.md` | what it takes to reproduce the paper, and the reproduced tables beside the published ones |
 | `EVALUATION.md` | the reporting protocol taken apart: what the ensemble and the epoch selection are each worth, what honest replacements give, and what the published Forgetting Measure actually is |
 | `MEASUREMENTS.md` | everything else measured: checkpoints, grid resolution, bank size, where paper and code disagree, claims we withdrew, and what is still unexplained |
@@ -106,8 +106,8 @@ of shape (15, 7, 768) and `args_dict.npy` carries `length=5`; neither reaches th
 `UCAD_NORMALIZE_FEATURES=1` L2-normalises the features on the way into the bank and the query, which
 turns the plain L2 index into a cosine one. The loss normalises before it measures anything, so
 without this the objective shapes directions while the score reads lengths that nothing constrains.
-It is worth more than the training is, and it is the only change that makes SCL earn its place - see
-`FINDINGS.md`.
+It is worth more than the training is - and it still does not make the loss useful, which is the
+point of `FINDINGS.md`.
 
 `UCAD_LOSS` selects the loss form: `code` (default, the released exponential), `paper` (Eq. 3 as
 written), `noexp`, `zero` (no learning signal at all), `balanced` (each term of Eq. 3 divided by its

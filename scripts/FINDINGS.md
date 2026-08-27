@@ -1,19 +1,23 @@
 # What the contrastive loss is worth
 
 Written for someone who has not seen this project. It sets out what UCAD does, what its code reports,
-and what the contrastive loss actually contributes - which is nothing as the method is released, for
-a reason that turns out to be fixable in one line. Every number here was produced by this repository;
-`REPRODUCTION.md` says how to produce them.
+and what the contrastive loss actually contributes, which is nothing - including after the one
+defect that could plausibly explain it is repaired. Every number here was produced by this
+repository; `REPRODUCTION.md` says how to produce them.
 
 The short version, if you read no further:
 
 - As released, switching the loss off changes nothing measurable on either benchmark, at any prompt
   length, and the published gain of +0.088 on VisA is the reporting protocol rather than the loss.
 - The loss is not broken and is not miscoded: it moves the features exactly where it says it will.
-- It does not help because it optimises cosine geometry while the bank is searched by Euclidean
-  distance over vectors whose lengths nothing constrains. Normalise the features into the bank and
-  the loss starts earning its place, +0.009 image and +0.025 pixel on VisA over disjoint seed ranges.
-- That same normalisation is worth more on its own than all of the training.
+- There is a real design defect behind it - the loss optimises cosine geometry while the bank is
+  searched by Euclidean distance over vectors whose lengths nothing constrains, and those lengths
+  have a spread 1.5 to 1.8 times their mean. Repairing it in one line is worth +0.015 to +0.030 on
+  its own, more than all of the training.
+- **Repairing it does not rescue the loss.** With the geometries aligned, a single trained model
+  still scores below its own untrained control: 0.7846 against 0.8118 on VisA over disjoint seed
+  ranges. The loss wins only under the reported protocol, and that is an ensembling effect - it makes
+  the 25 averaged epochs more diverse, while each of them is worse.
 
 ## The method in one page
 
@@ -261,27 +265,54 @@ against 69). The distance the score reads is dominated by length, and length is 
 never sees. Over 25 epochs on candle the norm drifts 69.0 -> 97.6 while its spread falls to 53 by
 epoch 15 and rebounds to 130 - moved around freely, because nothing holds it.
 
-**Put both in the same geometry and the loss starts paying.** `UCAD_NORMALIZE_FEATURES=1`
-L2-normalises the features on the way into the bank and the query, which makes the L2 index a cosine
-index. Three seeds each, reported protocol, ImageNet-21k weights, VisA on the official split:
+**Aligning the two geometries is worth a great deal - but not to the loss.**
+`UCAD_NORMALIZE_FEATURES=1` L2-normalises the features on the way into the bank and the query, which
+makes the L2 index a cosine index. Three seeds each, reported protocol, ImageNet-21k weights, VisA on
+the official split:
 
 | | untrained | SCL, 25 epochs | zero loss, 25 epochs |
 |---|---|---|---|
 | MVTec, as released | 0.9153 | 0.9259 | 0.9271 |
 | MVTec, normalised | 0.9306 +- 0.0044 | 0.9455 +- 0.0013 | 0.9466 +- 0.0001 |
 | VisA, as released | 0.7872 | 0.8644 | 0.8708 |
-| VisA, normalised | 0.8052 +- 0.0043 | **0.8944 +- 0.0018** | 0.8857 +- 0.0010 |
+| VisA, normalised | 0.8052 +- 0.0043 | 0.8944 +- 0.0018 | 0.8857 +- 0.0010 |
 
-On VisA that is the first cell in this whole analysis where SCL beats its own control with disjoint
-seed ranges: +0.0087 image AUROC (0.8926-0.8962 against 0.8847-0.8867) and +0.0246 pixel AUPR
-(0.3258 +- 0.0023 against 0.3012 +- 0.0011). On MVTec it stays neutral, which is what the geometry log
-predicts: over 25 epochs bottle moves from 0.5240 to 0.5238 within-segment and 0.1397 to 0.1328
-between, so there the loss has nothing to contribute in either geometry.
+The normalisation alone is worth +0.015 to +0.030, more than everything the paper's training does,
+and the untrained normalised model on MVTec already matches the published 0.930.
 
-The two rows together say something sharper than "SCL does not work". The normalisation alone is worth
-+0.015 to +0.030, more than everything the paper's training does, and the untrained normalised model on
-MVTec already matches the published 0.930. The loss becomes useful only once the score is read in the
-geometry the loss optimises, and even then only where the loss actually moves the features.
+The VisA cell where SCL beats its control by +0.0087 is the only one in this whole analysis where it
+wins - and it is an artefact of the column it sits in. Every number in that table is under the
+reported protocol, so both sides get 25 coreset re-rolls, the ensemble and the selection. Read the
+same runs as single models instead, at the last epoch, which is the honest comparison:
+
+| normalised, single model at epoch 25 | SCL | zero loss |
+|---|---|---|
+| VisA image AUROC | 0.7846 +- 0.0164 | **0.8118 +- 0.0124** |
+| VisA pixel AUPR | 0.2623 +- 0.0154 | 0.2577 +- 0.0157 |
+| MVTec image AUROC | 0.8991 +- 0.0108 | **0.9058 +- 0.0018** |
+| MVTec pixel AUPR | 0.4400 +- 0.0060 | 0.4333 +- 0.0115 |
+
+**SCL loses on both benchmarks**, and on VisA the seed ranges are disjoint (0.7671-0.7996 against
+0.8042-0.8261). It loses at every honest reading of the same runs, not only the last epoch:
+
+| normalised, VisA / MVTec | SCL | zero loss |
+|---|---|---|
+| last epoch | 0.7846 / 0.8991 | **0.8118** / **0.9058** |
+| best epoch common to all concepts, chosen on the test labels | 0.8208 / 0.9279 | **0.8292** / **0.9294** |
+| best epoch per concept, chosen on the test labels | **0.8627** / 0.9518 | 0.8587 / **0.9539** |
+| the reported protocol | **0.8944** / 0.9455 | 0.8857 / **0.9466** |
+
+On MVTec the best epoch is 0 or 1 in all three runs, so training makes it worse from the first step.
+
+What the protocol column is measuring instead is ensemble diversity. It averages 25 epochs; with SCL
+the prompt moves, so those 25 members differ from one another in more than their coreset draw, and a
+more diverse ensemble averages better. The members themselves are worse. That reading is an inference
+from the two tables rather than a direct measurement, and it is the one thing here still worth
+testing directly.
+
+So the geometry mismatch is real, and repairing it is the largest single improvement in this
+document - but the loss does not become useful once it is repaired. It halves its own damage on VisA,
+from -0.045 to -0.027 against the untrained model, and stays negative.
 
 **The cross-image half of ReConPatch makes it worse, not better.** The paper names ReConPatch as its
 inspiration, but ReConPatch forms positive pairs from feature-space nearest neighbours across the
