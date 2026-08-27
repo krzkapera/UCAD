@@ -114,6 +114,11 @@ written), `noexp`, `zero` (no learning signal at all), `balanced` (each term of 
 own pair count) and `reconpatch` (adds the cross-image positives ReConPatch defines and Eq. 3 does
 not; k from `UCAD_RECONPATCH_K`, 5 by default).
 
+`UCAD_PROMPT_INIT` selects how the prefix is initialised: `uniform` (default, what the released code
+asks for) or `zero`. `EPrompt` has always supported both. A zero prompt is not the same as no prompt -
+the key and value tokens are still prepended to all twelve blocks, so the attention normalisation
+changes either way.
+
 `UCAD_NO_PROMPT=1` builds the scoring backbone without e-prompt, so the prefix tokens are gone from
 all twelve blocks and it is the same frozen ViT the key comes from. There is nothing left to train, so
 the training pass is skipped and the CPM stores nothing in the prompt slot.

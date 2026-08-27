@@ -121,7 +121,11 @@ class PatchCore(torch.nn.Module):
             drop_block_rate=None,
             prompt_length=int(os.environ.get("UCAD_PROMPT_LEN", "1")),
             embedding_key="cls",
-            prompt_init="uniform",
+            # EPrompt already supports 'zero'; the released code only ever asks for 'uniform'. A zero
+            # prompt is not the same as no prompt - prefix tuning still prepends key and value tokens
+            # to all twelve blocks, so the attention normalisation changes either way. UCAD_NO_PROMPT
+            # is the ablation that removes the tokens.
+            prompt_init=os.environ.get("UCAD_PROMPT_INIT", "uniform"),
             prompt_pool=True,
             prompt_key=True,
             pool_size=1,
