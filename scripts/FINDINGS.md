@@ -15,9 +15,9 @@ The short version, if you read no further:
   have a spread 1.5 to 1.8 times their mean. Repairing it in one line is worth +0.015 to +0.030 on
   its own, more than all of the training.
 - **Repairing it does not rescue the loss.** With the geometries aligned, a single trained model
-  still scores below its own untrained control: 0.7846 against 0.8118 on VisA over disjoint seed
-  ranges. The loss wins only under the reported protocol, and that is an ensembling effect - it makes
-  the 25 averaged epochs more diverse, while each of them is worse.
+  still scores below its own untrained control on VisA, 0.7807 against 0.8075 over seven seeds, and
+  ties it on MVTec. The loss wins in exactly one column, the reported protocol, and that win is
+  measured ensembling: it makes the 25 averaged epochs disagree more while each of them is worse.
 
 ## The method in one page
 
@@ -285,30 +285,37 @@ wins - and it is an artefact of the column it sits in. Every number in that tabl
 reported protocol, so both sides get 25 coreset re-rolls, the ensemble and the selection. Read the
 same runs as single models instead, at the last epoch, which is the honest comparison:
 
-| normalised, single model at epoch 25 | SCL | zero loss |
+Read each concept at its own last epoch - not at epoch 25, because a concept whose AUROC reaches
+exactly 1.0 breaks out of the loop early, and in these normalised runs that happens to four of
+fifteen MVTec concepts on average. Averaging only the concepts that survive to epoch 25 drops the
+easy ones and biases the result down. Seven seeds:
+
+| normalised, single model at its last epoch | SCL | zero loss |
 |---|---|---|
-| VisA image AUROC | 0.7846 +- 0.0164 | **0.8118 +- 0.0124** |
-| VisA pixel AUPR | 0.2623 +- 0.0154 | 0.2577 +- 0.0157 |
-| MVTec image AUROC | 0.8991 +- 0.0108 | **0.9058 +- 0.0018** |
-| MVTec pixel AUPR | 0.4400 +- 0.0060 | 0.4333 +- 0.0115 |
+| VisA image AUROC | 0.7807 +- 0.0144 | **0.8075 +- 0.0120** |
+| MVTec image AUROC | 0.9298 +- 0.0037 | 0.9308 +- 0.0037 |
 
-**SCL loses on both benchmarks**, and on VisA the seed ranges are disjoint (0.7671-0.7996 against
-0.8042-0.8261). It loses at every honest reading of the same runs, not only the last epoch:
+**On VisA SCL loses by 0.027**, roughly two standard deviations, with the ranges overlapping in one
+seed of seven (0.7588-0.7996 against 0.7941-0.8261). **On MVTec it is a null**, 0.001 with the two
+distributions on top of each other. Letting every concept pick its best epoch with the test labels -
+an oracle, not an honest reading - does not change the picture: 0.8638 against 0.8612 on VisA and
+0.9527 against 0.9521 on MVTec, both inside the spread.
 
-| normalised, VisA / MVTec | SCL | zero loss |
-|---|---|---|
-| last epoch | 0.7846 / 0.8991 | **0.8118** / **0.9058** |
-| best epoch common to all concepts, chosen on the test labels | 0.8208 / 0.9279 | **0.8292** / **0.9294** |
-| best epoch per concept, chosen on the test labels | **0.8627** / 0.9518 | 0.8587 / **0.9539** |
-| the reported protocol | **0.8944** / 0.9455 | 0.8857 / **0.9466** |
+So there is exactly one column where the loss wins, and it is the reported protocol.
 
-On MVTec the best epoch is 0 or 1 in all three runs, so training makes it worse from the first step.
+**That win is ensemble diversity, and it is measured, not inferred.** The protocol averages the
+epochs' rescaled score vectors, and an average helps more when its members disagree. Dumping every
+epoch's vector (`UCAD_DUMP_SCORES`) and reading them with `scripts/epoch_diversity.py`, four seeds:
 
-What the protocol column is measuring instead is ensemble diversity. It averages 25 epochs; with SCL
-the prompt moves, so those 25 members differ from one another in more than their coreset draw, and a
-more diverse ensemble averages better. The members themselves are worse. That reading is an inference
-from the two tables rather than a direct measurement, and it is the one thing here still worth
-testing directly.
+| VisA, normalised | mean pairwise correlation between epochs | last epoch | plain ensemble | what averaging buys |
+|---|---|---|---|---|
+| SCL | **0.825** | 0.778 | **0.890** | **+0.113** |
+| zero loss | 0.871 | 0.804 | 0.882 | +0.077 |
+
+Every column separates, with disjoint ranges across the four seeds. The loss makes the 25 members
+disagree more, each member is worse, and the average comes out ahead. On MVTec, where the geometry log
+already showed the loss barely moves the features, it does not even buy diversity: correlation 0.942
+against 0.940, and averaging buys +0.011 against +0.011.
 
 So the geometry mismatch is real, and repairing it is the largest single improvement in this
 document - but the loss does not become useful once it is repaired. It halves its own damage on VisA,

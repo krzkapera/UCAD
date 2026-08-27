@@ -242,11 +242,22 @@ Three ways of destroying the thing the paper is named after, all measured in the
 implementation on the **per-category folder copy** of VisA with the `augreg2_in21k_ft_in1k`
 checkpoint, single model, honest evaluation - so comparable to each other and not to the tables above.
 
-**Initialisation makes no difference.** Untrained, one seed: the reference's `uniform(-1, 1)` gives
-0.7984, all-zeros gives 0.7933. A 0.005 gap against a +-0.03 spread across seeds.
+**Initialisation makes no difference.** `UCAD_PROMPT_INIT` measures this in the reference itself -
+`EPrompt` has always supported `zero`, `PatchCore.load` only ever asked for `uniform`. Three seeds,
+ImageNet-21k weights, VisA on the official split, untrained:
 
-Worth recording how we know: the first all-zeros run came out byte-identical to the uniform one, which
-is what told us the switch was a no-op rather than the finding. 0.7933 is the re-run.
+| | uniform (released) | zero |
+|---|---|---|
+| MVTec | 0.9044 +- 0.0111 | 0.9068 +- 0.0074 |
+| VisA 1cls | 0.7866 +- 0.0042 | 0.7937 +- 0.0105 |
+
+And after 25 epochs of SCL starting from zeros: MVTec 0.9246 +- 0.0036 against 0.9259 for the
+released uniform start, VisA 0.8658 +- 0.0029 against 0.8644. Every difference is inside the seed
+spread, trained and untrained.
+
+An earlier version of this measurement lived in the other implementation on one seed of the folder
+copy, and is worth recording for how it failed: the first all-zeros run came out byte-identical to
+the uniform one, which is what told us the switch was a no-op rather than telling us the answer.
 
 **Deleting the prompt module costs nothing.** A zero-initialised prompt is not the same as no prompt:
 prefix tuning prepends key and value tokens to the attention of all twelve blocks, so a zero prompt

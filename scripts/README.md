@@ -11,6 +11,7 @@ Everything needed to run this repository's experiments, kept out of the model co
 | `visa_sam_b_masks.py` | rewrites VisA SAM label maps into the 8-bit, image-named form `run_ucad.py` reads |
 | `collect.py` | reads the `results.csv` files a set of runs wrote: one line per run, mean +- sd across seeds, or per category |
 | `seed_ensemble.py` | applies the reported protocol over seeds instead of epochs, from score vectors dumped with `UCAD_DUMP_SCORES` |
+| `epoch_diversity.py` | how correlated a run's per-epoch score vectors are, and what averaging them buys over the last epoch alone |
 | `FINDINGS.md` | what the contrastive loss contributes, the design defect behind it, and why repairing that defect still does not rescue it |
 | `REPRODUCTION.md` | what it takes to reproduce the paper, and the reproduced tables beside the published ones |
 | `EVALUATION.md` | the reporting protocol taken apart: what the ensemble and the epoch selection are each worth, what honest replacements give, and what the published Forgetting Measure actually is |
@@ -47,6 +48,8 @@ of the four variables above, and every one of them defaults to the released beha
 | that the prompt can be deleted outright | `UCAD_NO_PROMPT=1` |
 | that capacity was not the constraint | `UCAD_PROMPT_LEN=5` and `=7`, each against `UCAD_LOSS=zero` |
 | that the loss and the score disagree geometrically | `UCAD_LOG_GEOMETRY=1`, then `UCAD_NORMALIZE_FEATURES=1` against its `UCAD_LOSS=zero` control |
+| that the initialisation does not matter | `UCAD_PROMPT_INIT=zero` against `uniform`, three seeds |
+| why the loss can win under the protocol and lose as a single model | add `UCAD_DUMP_SCORES` to a 25-epoch run, then `epoch_diversity.py` |
 | where the published numbers come from | 25 seeds of `UCAD_NO_PROMPT=1 UCAD_EPOCHS=0 UCAD_EVAL_UNTRAINED=1 UCAD_DUMP_SCORES=<dir>/<dataset>_s<seed>`, then `seed_ensemble.py` |
 | what the published Forgetting Measure is | `collect.py ... mean`, which prints both banks; their distance is it |
 | that forgetting is zero by construction | `UCAD_LOG_FM=1` |
